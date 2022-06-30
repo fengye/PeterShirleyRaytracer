@@ -31,12 +31,16 @@ double hit_sphere(const point3 centre, double radius, const ray& r)
 	}
 }
 
-color ray_color(const ray& r, const hittable& world)
+color ray_color(const ray& r, const hittable& world, int depth)
 {
+	if (depth < 0)
+		return color(0, 0, 0);
+
 	hit_record record;
 	if (world.hit(r, 0, infinity, record))
 	{
-		return 0.5 * (record.normal + color(1, 1, 1));
+		vec3 target = record.p + record.normal + vec3::random_in_unit_sphere();
+		return 0.5 * ray_color(ray(record.p, target-record.p), world, depth-1);
 	}
 
 	vec3 ray_dir = unit_vector(r.direction()); // because r.direction() is not normalized
@@ -60,6 +64,8 @@ int main()
 
 	// multisample
 	const int sample_per_pixel = 100;
+	// ray bounce
+	const int max_depth = 50;
 
 	std::cout << "P3\n" << img_width << ' ' << img_height << "\n255\n";
 
@@ -74,7 +80,7 @@ int main()
 				double u = ((double)i + random_double()) / (img_width - 1);
 				double v = ((double)j + random_double()) / (img_height - 1);
 
-				pixel_color += ray_color(cam.get_ray(u, v), world);
+				pixel_color += ray_color(cam.get_ray(u, v), world, max_depth);
 			}
 
 			write_color(std::cout, pixel_color, sample_per_pixel);
