@@ -6,6 +6,7 @@
 #include "vec3.h"
 #include "sphere.h"
 #include "hittable_list.h"
+#include "camera.h"
 
 double hit_sphere(const point3 centre, double radius, const ray& r)
 {
@@ -45,25 +46,20 @@ color ray_color(const ray& r, const hittable& world)
 
 int main()
 {
-	// img
-	const auto aspect_ratio = 16.0 / 9.0;
-	const int img_width = 400;
-	const int img_height = (int)(img_width / aspect_ratio);
-
 	// camera
-	const auto viewport_height = 2.0;
-	const auto viewport_width = viewport_height * aspect_ratio;
-	const auto focal_length = 1.0;
+	camera cam;
 
-	const point3 origin(0.0, 0.0, 0.0);
-	const vec3 horizontal(viewport_width, 0.0, 0.0);
-	const vec3 vertical(0.0, viewport_height, 0.0);
-	vec3 lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 + vec3(0, 0, -focal_length);
+	// img
+	const int img_width = 400;
+	const int img_height = (int)(img_width / cam.aspect_ratio);
 
 	// world
 	hittable_list world;
 	world.add(make_shared<sphere>(point3(0, 0, -1), 0.5));
 	world.add(make_shared<sphere>(point3(0, -100.5, 0), 100.0));
+
+	// multisample
+	const int sample_per_pixel = 100;
 
 	std::cout << "P3\n" << img_width << ' ' << img_height << "\n255\n";
 
@@ -72,12 +68,16 @@ int main()
 		std::cerr << "\rScanline remaining: " << j << ' ' << std::flush;
 		for(int i = 0; i < img_width; ++i)
 		{
-			double u = (double)i / (img_width - 1);
-			double v = (double)j / (img_height - 1);
+			color pixel_color(0, 0, 0);
+			for (int s = 0; s < sample_per_pixel; ++s)
+			{
+				double u = ((double)i + random_double()) / (img_width - 1);
+				double v = ((double)j + random_double()) / (img_height - 1);
 
-			ray r(origin, lower_left_corner + u * horizontal + v * vertical - origin);
-			color pixel_color = ray_color(r, world);
-			write_color(std::cout, pixel_color);
+				pixel_color += ray_color(cam.get_ray(u, v), world);
+			}
+
+			write_color(std::cout, pixel_color, sample_per_pixel);
 		}
 	}
 

@@ -28,6 +28,12 @@ inline double random_double(double min, double max)
     return min + (max - min) * random_double();
 }
 
+template<class T>
+inline T clamp(const T v, const T min, const T max)
+{
+    return std::min(std::max(v, min), max);
+}
+
 #include "ray.h"
 #include "vec3.h"
 
