@@ -8,6 +8,9 @@
 
 using std::sqrt;
 
+class vec3;
+extern vec3 unit_vector(const vec3& v);
+extern double dot(const vec3& u, const vec3& v);
 ////////////////////////////////////////////////////////////////////
 // vec3
 class vec3
@@ -89,6 +92,20 @@ public:
 
 			return v;
 		}
+	}
+
+	static vec3 random_unit_vector()
+	{
+		return unit_vector(random_in_unit_sphere());
+	}
+
+	static vec3 random_in_hemisphere(const vec3& normal)
+	{
+		vec3 random_vec = random_in_unit_sphere();
+		if (dot(random_vec, normal) > 0)
+			return random_vec;
+		else
+			return -random_vec;
 	}
 
 

@@ -37,9 +37,9 @@ color ray_color(const ray& r, const hittable& world, int depth)
 		return color(0, 0, 0);
 
 	hit_record record;
-	if (world.hit(r, 0.001, infinity, record))
+	if (world.hit(r, 0, infinity, record))
 	{
-		vec3 target = record.p + record.normal + vec3::random_in_unit_sphere();
+		vec3 target = record.p + record.normal + vec3::random_in_hemisphere(record.normal);
 		return 0.5 * ray_color(ray(record.p, target-record.p), world, depth-1);
 	}
 
