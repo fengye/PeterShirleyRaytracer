@@ -188,7 +188,7 @@ int main()
 	// clear screen
 	const u32 CLEAR_COLOR = 0x20FF30;
 	rsxClearScreenSetBlendState(CLEAR_COLOR);
-  flip();
+	flip();
 
 
 	// world
@@ -202,8 +202,7 @@ int main()
 	// then j = img_height-1 means the top row of the image
 	for(int j = img_height-1; j >= 0; --j)
 	{
-		fprintf(stderr, "\rScanline remaining: %d ", j);
-		fflush(stderr);
+		debug_printf("\rScanline remaining: %d ", j);
 
 		for(int i = 0; i < img_width; ++i)
 		{
