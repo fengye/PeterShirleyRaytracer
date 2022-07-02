@@ -4,6 +4,8 @@
 #include <cmath>
 #include <iostream>
 
+#include "random.h"
+
 using std::sqrt;
 
 ////////////////////////////////////////////////////////////////////
@@ -63,6 +65,30 @@ public:
 	double length() const
 	{
 		return sqrt(length_squared());
+	}
+
+	static vec3 random()
+	{
+		return vec3(random_double(), random_double(), random_double());
+	}
+
+	static vec3 random(double min, double max)
+	{
+		return vec3(random_double(min, max), random_double(min, max), random_double(min, max));
+	}
+
+	static vec3 random_in_unit_sphere()
+	{
+		// First, pick a random point in the unit cube where x, y, and z all range from −1 to +1. 
+		// Reject this point and try again if the point is outside the sphere.
+		while(true)
+		{
+			vec3 v = random(-1.0, 1.0);
+			if (v.length_squared() > 1.0)
+				continue;
+
+			return v;
+		}
 	}
 
 

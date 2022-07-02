@@ -43,12 +43,16 @@ double hit_sphere(const point3 centre, double radius, const ray& r)
 	}
 }
 
-color ray_color(const ray& r, const hittable& world)
+color ray_color(const ray& r, const hittable& world, int depth)
 {
+	if (depth < 0)
+		return color(0, 0, 0);
+
 	hit_record record;
 	if (world.hit(r, 0, RT_infinity, record))
 	{
-		return 0.5 * (record.normal + color(1, 1, 1));
+		vec3 target = record.p + record.normal + vec3::random_in_unit_sphere();
+		return 0.5 * ray_color(ray(record.p, target-record.p), world, depth-1);
 	}
 
 	vec3 ray_dir = unit_vector(r.direction()); // because r.direction() is not normalized
@@ -166,6 +170,9 @@ int main()
 	camera cam;
 	// multisample
 	const int sample_per_pixel = 100;
+	// ray bounce
+	const int max_depth = 50;
+
 
 	// img
 	const int img_width = 400;
@@ -221,7 +228,7 @@ int main()
 				double u = ((double)i + random_double()) / (img_width - 1);
 				double v = ((double)j + random_double()) / (img_height - 1);
 
-				pixel_color += ray_color(cam.get_ray(u, v), world);
+				pixel_color += ray_color(cam.get_ray(u, v), world, max_depth);
 			}
 
 			// Bitmap using origin on top-left, with Y axis pointing down, so have to do the conversion here
@@ -241,6 +248,8 @@ done:
 	blit_scale(&bitmap, 0, 0, 0, 0, img_width, img_height, 4.0f);
 	flip();
 
+	debug_printf("\nDone.\n");
+
 	while(true)
 	{
 		sysUtilCheckCallback();
@@ -259,10 +268,9 @@ done:
 			break;
 		usleep(2000);
 	}
-	debug_printf("\nDone.\n");
-
+	
+	debug_printf("Exiting...\n");
 	bitmapDestroy(&bitmap);
-
 	debug_return_ps3loadx();
 	return 0;
 }
