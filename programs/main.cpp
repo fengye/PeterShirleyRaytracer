@@ -1,9 +1,11 @@
 #include "debug.h"
 
+#include "raytracer.h"
 #include "color.h"
 #include "ray.h"
 #include "vec3.h"
 #include "sphere.h"
+#include "hittable_list.h"
 #include <cstdio>
 #include <malloc.h>
 #include <unistd.h>
@@ -40,13 +42,12 @@ double hit_sphere(const point3 centre, double radius, const ray& r)
 	}
 }
 
-color ray_color(const ray& r)
+color ray_color(const ray& r, const hittable& world)
 {
-	sphere s(point3(0, 0, -1), 0.5);
 	hit_record record;
-	if (s.hit(r, 0, DBL_MAX, record))
+	if (world.hit(r, 0, RT_infinity, record))
 	{
-		return 0.5 * color(record.normal.x() + 1, record.normal.y() + 1, record.normal.z() + 1);
+		return 0.5 * (record.normal + color(1, 1, 1));
 	}
 
 	vec3 ray_dir = unit_vector(r.direction()); // because r.direction() is not normalized
@@ -187,6 +188,10 @@ int main()
 	const vec3 vertical(0.0, viewport_height, 0.0);
 	vec3 lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 + vec3(0, 0, -focal_length);
 
+	// world
+	hittable_list world;
+	world.add(make_shared<sphere>(point3(0, 0, -1), 0.5));
+	world.add(make_shared<sphere>(point3(0, -100.5, 0), 100.0));
 	
 	running = 1;
 
@@ -216,8 +221,8 @@ int main()
 			double u = (double)i / (img_width - 1);
 			double v = (double)j / (img_height - 1);
 
-			//color pixel_color(double(i) / (img_width - 1), double(j) / (img_height - 1), 0.25);
-			color pixel_color = ray_color(ray(origin, lower_left_corner + u * horizontal + v * vertical - origin));
+			ray r(origin, lower_left_corner + u * horizontal + v * vertical - origin);
+			color pixel_color = ray_color(r, world);
 			// Bitmap using origin on top-left, with Y axis pointing down, so have to do the conversion here
 			write_color_bitmap(&bitmap, i, (img_height - (j+1)), pixel_color);
 		}
