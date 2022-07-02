@@ -3,9 +3,11 @@
 #include "color.h"
 #include "ray.h"
 #include "vec3.h"
+#include "sphere.h"
 #include <cstdio>
 #include <malloc.h>
 #include <unistd.h>
+#include <cfloat>
 // PS3 specific
 #include <io/pad.h>
 #include <rsx/rsx.h>
@@ -40,18 +42,18 @@ double hit_sphere(const point3 centre, double radius, const ray& r)
 
 color ray_color(const ray& r)
 {
-	const point3 sphere_centre(0, 0, -1);
-	auto t = hit_sphere(sphere_centre, 0.5, r);
-	if (t > 0)
+	sphere s(point3(0, 0, -1), 0.5);
+	hit_record record;
+	if (s.hit(r, 0, DBL_MAX, record))
 	{
-		vec3 norm = unit_vector(r.at(t) - sphere_centre);
-		return 0.5 * color(norm.x() + 1, norm.y() + 1, norm.z() + 1);
+		return 0.5 * color(record.normal.x() + 1, record.normal.y() + 1, record.normal.z() + 1);
 	}
 
 	vec3 ray_dir = unit_vector(r.direction()); // because r.direction() is not normalized
-	t = 0.5 * (ray_dir.y() + 1.0); // t <- [0, 1]
+	auto t = 0.5 * (ray_dir.y() + 1.0); // t <- [0, 1]
 	return (1.0 - t) * color(1.0, 1.0, 1.0) + t * color(0.5, 0.7, 1.0); // white blend with blue graident
 }
+
 
 
 SYS_PROCESS_PARAM(1001, 0x100000);
