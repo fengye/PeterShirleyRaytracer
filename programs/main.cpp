@@ -6,6 +6,7 @@
 #include "vec3.h"
 #include "sphere.h"
 #include "hittable_list.h"
+#include "camera.h"
 #include <cstdio>
 #include <malloc.h>
 #include <unistd.h>
@@ -161,10 +162,14 @@ int main()
 	padData paddata;
 	ioPadInit(7);
 
+	// camera
+	camera cam;
+	// multisample
+	const int sample_per_pixel = 100;
+
 	// img
-	const auto aspect_ratio = 16.0 / 9.0;
 	const int img_width = 400;
-	const int img_height = (int)(img_width / aspect_ratio);
+	const int img_height = (int)(img_width / cam.aspect_ratio);
 
 	debug_printf("Image %dx%d\n", img_width, img_height);
 
@@ -176,17 +181,8 @@ int main()
 	// clear screen
 	const u32 CLEAR_COLOR = 0x20FF30;
 	rsxClearScreenSetBlendState(CLEAR_COLOR);
-    flip();
+  flip();
 
-	// camera
-	const auto viewport_height = 2.0;
-	const auto viewport_width = viewport_height * aspect_ratio;
-	const auto focal_length = 1.0;
-
-	const point3 origin(0.0, 0.0, 0.0);
-	const vec3 horizontal(viewport_width, 0.0, 0.0);
-	const vec3 vertical(0.0, viewport_height, 0.0);
-	vec3 lower_left_corner = origin - horizontal / 2.0 - vertical / 2.0 + vec3(0, 0, -focal_length);
 
 	// world
 	hittable_list world;
@@ -204,27 +200,32 @@ int main()
 
 		for(int i = 0; i < img_width; ++i)
 		{
-			sysUtilCheckCallback();
-			ioPadGetInfo(&padinfo);
-			for(int p=0; p < MAX_PADS; p++)
+			color pixel_color(0, 0, 0);
+			for (int s = 0; s < sample_per_pixel; ++s)
 			{
-				if(padinfo.status[p]){
-					ioPadGetData(p, &paddata);
-					if(paddata.BTN_CROSS)
-						goto done;
+				sysUtilCheckCallback();
+				ioPadGetInfo(&padinfo);
+				for(int p=0; p < MAX_PADS; p++)
+				{
+					if(padinfo.status[p])
+					{
+						ioPadGetData(p, &paddata);
+						if(paddata.BTN_CROSS)
+							goto done;
+					}
 				}
+
+				if (!running)
+					goto done;
+
+				double u = ((double)i + random_double()) / (img_width - 1);
+				double v = ((double)j + random_double()) / (img_height - 1);
+
+				pixel_color += ray_color(cam.get_ray(u, v), world);
 			}
 
-			if (!running)
-				goto done;
-
-			double u = (double)i / (img_width - 1);
-			double v = (double)j / (img_height - 1);
-
-			ray r(origin, lower_left_corner + u * horizontal + v * vertical - origin);
-			color pixel_color = ray_color(r, world);
 			// Bitmap using origin on top-left, with Y axis pointing down, so have to do the conversion here
-			write_color_bitmap(&bitmap, i, (img_height - (j+1)), pixel_color);
+			write_color_bitmap(&bitmap, i, (img_height - (j+1)), pixel_color, sample_per_pixel);
 		}
 
 		if (j % 10 == 0)
