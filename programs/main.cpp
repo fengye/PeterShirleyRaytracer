@@ -22,11 +22,11 @@ double hit_sphere(const point3 centre, double radius, const ray& r)
 	auto a_minus_c = r.origin() - centre;
 
 	auto A = dot(b, b);
-	auto B = dot(2.0 * b, a_minus_c);
+	auto HALF_B = dot(b, a_minus_c);
 	auto C = dot(a_minus_c, a_minus_c) - radius * radius;
 	// If there's real number solution, the discriminant needs to be greater than or equal to zero
 	// B^2 - 4AC
-	auto discriminant = (B * B - 4.0 * A * C);
+	auto discriminant = (HALF_B * HALF_B - A * C);
 	if (discriminant < 0)
 	{
 		return -1.0;
@@ -34,7 +34,7 @@ double hit_sphere(const point3 centre, double radius, const ray& r)
 	else
 	{
 		//assume the closest hit point (smallest t), so we use [-sqrt(discriminant)] as the solution
-		return (-B - std::sqrt(discriminant)) / (2.0 * A);
+		return (-HALF_B - std::sqrt(discriminant)) / A;
 	}
 }
 
