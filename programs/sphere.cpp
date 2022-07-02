@@ -32,7 +32,7 @@ bool sphere::hit(const ray& r, double tmin, double tmax, hit_record& record) con
 		}
 
 		record.p = r.at(t);
-		record.normal = (record.p - centre) / radius;
+		record.set_face_normal(r, (record.p - centre) / radius);
 		record.t = t;
 		
 		return true;
