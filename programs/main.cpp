@@ -131,6 +131,43 @@ void blit_scale(Bitmap *bitmap, u32 dstX, u32 dstY, u32 srcX, u32 srcY, u32 w, u
   rsxSetTransferScaleSurface(context, &scale, &surface);
 }
 
+void blit_to(Bitmap *bitmap, u32 dstX, u32 dstY, u32 dstW, u32 dstH, u32 srcX, u32 srcY, u32 srcW, u32 srcH)
+{
+	gcmTransferScale scale;
+	gcmTransferSurface surface;
+
+	scale.conversion = GCM_TRANSFER_CONVERSION_TRUNCATE;
+	scale.format = GCM_TRANSFER_SCALE_FORMAT_A8R8G8B8;
+	scale.origin = GCM_TRANSFER_ORIGIN_CORNER;
+	scale.operation = GCM_TRANSFER_OPERATION_SRCCOPY_AND;
+	scale.interp = GCM_TRANSFER_INTERPOLATOR_NEAREST;
+	scale.clipX = 0;
+	scale.clipY = 0;
+	scale.clipW = display_width;
+	scale.clipH = display_height;
+	scale.outX = dstX;
+	scale.outY = dstY;
+	scale.outW = dstW;
+	scale.outH = dstH;
+
+	scale.ratioX = rsxGetFixedSint32((float)srcW / dstW);
+	scale.ratioY = rsxGetFixedSint32((float)srcH / dstH);
+
+	scale.inX = rsxGetFixedUint16(srcX);
+	scale.inY = rsxGetFixedUint16(srcY);
+	scale.inW = bitmap->width;
+	scale.inH = bitmap->height;
+	scale.offset = bitmap->offset;
+	scale.pitch = sizeof(u32) * bitmap->width;
+
+	surface.format = GCM_TRANSFER_SURFACE_FORMAT_A8R8G8B8;
+	surface.pitch = color_pitch;
+	surface.offset = color_offset[curr_fb];
+
+	rsxSetTransferScaleMode(context, GCM_TRANSFER_LOCAL_TO_LOCAL, GCM_TRANSFER_SURFACE);
+	rsxSetTransferScaleSurface(context, &scale, &surface);
+}
+
 void rsxClearScreenSetBlendState(u32 clear_color)
 {
 	rsxSetClearColor(context, clear_color);
@@ -237,14 +274,14 @@ int main()
 		if (j % 10 == 0)
 		{
 			rsxClearScreenSetBlendState(CLEAR_COLOR);
-			blit_scale(&bitmap, 0, 0, 0, 0, img_width, img_height, 4.0f);
+			blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);
 			flip();
 		}
 	}
 
 done:
 	rsxClearScreenSetBlendState(CLEAR_COLOR);
-	blit_scale(&bitmap, 0, 0, 0, 0, img_width, img_height, 4.0f);
+	blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);
 	flip();
 
 	debug_printf("\nDone.\n");
