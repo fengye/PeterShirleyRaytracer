@@ -51,7 +51,7 @@ color ray_color(const ray& r, const hittable& world, int depth)
 	hit_record record;
 	if (world.hit(r, 0.001, RT_infinity, record))
 	{
-		vec3 target = record.p + record.normal + vec3::random_in_unit_sphere();
+		vec3 target = record.p + record.normal + vec3::random_unit_vector();
 		return 0.5 * ray_color(ray(record.p, target-record.p), world, depth-1);
 	}
 
