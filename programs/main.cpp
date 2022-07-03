@@ -96,41 +96,6 @@ void blit_simple(Bitmap *bitmap, u32 dstX, u32 dstY, u32 srcX, u32 srcY, u32 w, 
     rsxGetFixedUint16((float)srcY), w, h, 4);
 }
 
-void blit_scale(Bitmap *bitmap, u32 dstX, u32 dstY, u32 srcX, u32 srcY, u32 w, u32 h, float zoom)
-{
-  gcmTransferScale scale;
-  gcmTransferSurface surface;
-
-  scale.conversion = GCM_TRANSFER_CONVERSION_TRUNCATE;
-  scale.format = GCM_TRANSFER_SCALE_FORMAT_A8R8G8B8;
-  scale.origin = GCM_TRANSFER_ORIGIN_CORNER;
-  scale.operation = GCM_TRANSFER_OPERATION_SRCCOPY_AND;
-  scale.interp = GCM_TRANSFER_INTERPOLATOR_NEAREST;
-  scale.clipX = 0;
-  scale.clipY = 0;
-  scale.clipW = display_width;
-  scale.clipH = display_height;
-  scale.outX = dstX;
-  scale.outY = dstY;
-  scale.outW = w * zoom;
-  scale.outH = h * zoom;
-  scale.ratioX = rsxGetFixedSint32(1.f / zoom);
-  scale.ratioY = rsxGetFixedSint32(1.f / zoom);
-  scale.inX = rsxGetFixedUint16(srcX);
-  scale.inY = rsxGetFixedUint16(srcY);
-  scale.inW = bitmap->width;
-  scale.inH = bitmap->height;
-  scale.offset = bitmap->offset;
-  scale.pitch = sizeof(u32) * bitmap->width;
-
-  surface.format = GCM_TRANSFER_SURFACE_FORMAT_A8R8G8B8;
-  surface.pitch = color_pitch;
-  surface.offset = color_offset[curr_fb];
-
-  rsxSetTransferScaleMode(context, GCM_TRANSFER_LOCAL_TO_LOCAL, GCM_TRANSFER_SURFACE);
-  rsxSetTransferScaleSurface(context, &scale, &surface);
-}
-
 void blit_to(Bitmap *bitmap, u32 dstX, u32 dstY, u32 dstW, u32 dstH, u32 srcX, u32 srcY, u32 srcW, u32 srcH)
 {
 	gcmTransferScale scale;
@@ -186,9 +151,98 @@ void rsxClearScreenSetBlendState(u32 clear_color)
 
 }
 
+// SPU TEST
+#include <sys/spu.h>
+
+#include "spu_bin.h"
+#include "spustr.h"
+
+#define ptr2ea(x) ((u64)(void *)(x))
+
+// Hijack printf
+#define printf debug_printf
+
+int spu_test()
+{
+	sysSpuImage image;
+	u32 group_id;
+	sysSpuThreadAttribute attr = { "mythread", 8+1, SPU_THREAD_ATTR_NONE };
+	sysSpuThreadGroupAttribute grpattr = { 7+1, "mygroup", 0, {0} };
+	sysSpuThreadArgument arg[6];
+	u32 cause, status;
+	int i;
+	spustr_t *spu = (spustr_t *)memalign(16, 6*sizeof(spustr_t));
+	uint32_t *array = (uint32_t *)memalign(16, 24*sizeof(uint32_t));
+
+	printf("Initializing 6 SPUs... ");
+	printf("%08x\n", sysSpuInitialize(6, 0));
+
+	printf("Loading ELF image... ");
+	printf("%08x\n", sysSpuImageImport(&image, spu_bin, 0));
+
+	printf("Creating thread group... ");
+	printf("%08x\n", sysSpuThreadGroupCreate(&group_id, 6, 100, &grpattr));
+	printf("group id = %d\n", group_id);
+
+	/* create 6 spu threads */
+	for (i = 0; i < 6; i++) {
+		spu[i].rank = i;
+		spu[i].count = 6;
+		spu[i].sync = 0;
+		spu[i].array_ea = ptr2ea(array);
+		arg[i].arg0 = ptr2ea(&spu[i]);
+
+		printf("Creating SPU thread... ");
+		printf("%08x\n", sysSpuThreadInitialize(&spu[i].id, group_id, i, &image, &attr, &arg[i]));
+		printf("thread id = %d\n", spu[i].id);
+
+		printf("Configuring SPU... %08x\n",
+		sysSpuThreadSetConfiguration(spu[i].id, SPU_SIGNAL1_OVERWRITE|SPU_SIGNAL2_OVERWRITE));
+	}
+
+	printf("Starting SPU thread group... ");
+	printf("%08x\n", sysSpuThreadGroupStart(group_id));
+
+	printf("Initial array: ");
+	for (i = 0; i < 24; i++) {
+		array[i] = i+1;
+		printf(" %d", array[i]);
+	}
+	printf("\n");
+
+	/* Send signal notification to waiting spus */
+	for (i = 0; i < 6; i++)
+		printf("Sending signal... %08x\n",
+			sysSpuThreadWriteSignal(spu[i].id, 0, 1));
+
+	printf("Waiting for SPUs to return...\n");
+	for (i = 0; i < 6; i++)
+		while (spu[i].sync == 0);
+
+	printf("Output array: ");
+	for (i = 0; i < 24; i++)
+		printf(" %d", array[i]);
+	printf("\n");
+
+	printf("Joining SPU thread group... ");
+	printf("%08x\n", sysSpuThreadGroupJoin(group_id, &cause, &status));
+	printf("cause=%d status=%d\n", cause, status);
+
+	printf("Closing image... %08x\n", sysSpuImageClose(&image));
+
+	free(array);
+	free(spu);
+
+	return 0;
+}
+
+
 int main()
 {
 	debug_init();
+
+	// SPU test
+	spu_test();
 
 	// frame buffer
 	void *host_addr = memalign(CB_SIZE, HOST_SIZE);

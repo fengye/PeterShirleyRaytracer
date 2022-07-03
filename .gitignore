@@ -3,3 +3,7 @@ build/*
 *.elf
 *.self
 *.pkg
+*.o
+*.bin
+*.d
+*.elf.map

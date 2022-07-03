@@ -7,7 +7,7 @@ ifeq ($(strip $(PSL1GHT)),)
 $(error "Please set PSL1GHT in your environment. export PSL1GHT=<path>")
 endif
 
-include $(PSL1GHT)/ppu_rules
+include $(PSL1GHT)/spu_rules
 
 #---------------------------------------------------------------------------------
 # TARGET is the name of the output
@@ -17,22 +17,15 @@ include $(PSL1GHT)/ppu_rules
 #---------------------------------------------------------------------------------
 TARGET		:=	$(notdir $(CURDIR))
 BUILD		:=	build
-SOURCES		:=	programs
-DATA		:=	data
-INCLUDES	:=	include
+SOURCES		:=	./
+DATA		:=
+INCLUDES	:=	../
 
-TITLE		:=	PeterShirleyRaytracer
-APPID		:=	RAYTRACER001
-CONTENTID	:=	UP0001-$(APPID)_00-0000000000000000
-SFOXML		:=	package.xml
-
-SHADERS		:=	shaders
-PKGFILES	:=	$(CURDIR)/pkgfiles
 #---------------------------------------------------------------------------------
 # options for code generation
 #---------------------------------------------------------------------------------
 
-CFLAGS		=	-O2 -Wall -mcpu=cell $(MACHDEP) $(INCLUDE)
+CFLAGS		=	-O2 -Wall $(MACHDEP) $(INCLUDE)
 CXXFLAGS	=	$(CFLAGS)
 
 LDFLAGS		=	$(MACHDEP) -Wl,-Map,$(notdir $@).map
@@ -40,7 +33,7 @@ LDFLAGS		=	$(MACHDEP) -Wl,-Map,$(notdir $@).map
 #---------------------------------------------------------------------------------
 # any extra libraries we wish to link with the project
 #---------------------------------------------------------------------------------
-LIBS	:=	-lrsx -lgcm_sys -lio -lsysutil -lrt -llv2 -lm -lnet -lsysmodule
+LIBS	:= -lsputhread
 
 #---------------------------------------------------------------------------------
 # list of directories containing libraries, this must be the top level containing
@@ -71,14 +64,8 @@ CFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.c)))
 CPPFILES	:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.cpp)))
 sFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.s)))
 SFILES		:=	$(foreach dir,$(SOURCES),$(notdir $(wildcard $(dir)/*.S)))
-BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*))) \
-				spu.bin
+BINFILES	:=	$(foreach dir,$(DATA),$(notdir $(wildcard $(dir)/*.*)))
 
-VCGFILES	:=	$(foreach dir,$(SHADERS),$(notdir $(wildcard $(dir)/*.vcg)))
-FCGFILES	:=	$(foreach dir,$(SHADERS),$(notdir $(wildcard $(dir)/*.fcg)))
-
-VPOFILES	:=	$(VCGFILES:.vcg=.vpo)
-FPOFILES	:=	$(FCGFILES:.fcg=.fpo)
 #---------------------------------------------------------------------------------
 # use CXX for linking C++ projects, CC for standard C
 #---------------------------------------------------------------------------------
@@ -107,64 +94,32 @@ export LIBPATHS	:=	$(foreach dir,$(LIBDIRS),-L$(dir)/lib) \
 					$(LIBPSL1GHT_LIB)
 
 export OUTPUT	:=	$(CURDIR)/$(TARGET)
-.PHONY: $(BUILD) clean bin
+.PHONY: $(BUILD) clean
 
 #---------------------------------------------------------------------------------
-$(BUILD): bin
+$(BUILD):
 	@[ -d $@ ] || mkdir -p $@
 	@$(MAKE) --no-print-directory -C $(BUILD) -f $(CURDIR)/Makefile
 
 #---------------------------------------------------------------------------------
 clean:
 	@echo clean ...
-	@$(MAKE) -C programs/spu clean
-	@rm -fr $(BUILD) $(OUTPUT).elf $(OUTPUT).self $(DATA)/spu.bin
-#---------------------------------------------------------------------------------
-bin:
-	@$(MAKE) -C programs/spu
+	@rm -fr $(BUILD) $(OUTPUT).elf
+	@rm -rf data/spu.bin
 
 #---------------------------------------------------------------------------------
-run:
-	ps3load $(OUTPUT).self
-
-#---------------------------------------------------------------------------------
-pkg:	$(BUILD) $(OUTPUT).pkg
-
-#---------------------------------------------------------------------------------
-npdrm: $(BUILD)
-	@$(SELF_NPDRM) $(SCETOOL_FLAGS) --np-content-id=$(CONTENTID) --encrypt $(BUILDDIR)/$(basename $(notdir $(OUTPUT))).elf $(BUILDDIR)/../EBOOT.BIN
-
-#---------------------------------------------------------------------------------
-
 else
 
-DEPENDS	:=	$(OFILES:.o=.d)
+DEPENDS	:= $(OFILES:.o=.d)
 
 #---------------------------------------------------------------------------------
 # main targets
 #---------------------------------------------------------------------------------
-$(OUTPUT).self: $(OUTPUT).elf
-$(OUTPUT).elf:	$(OFILES)
+# Starts counting from "build"
+../../../data/spu.bin: $(OUTPUT).elf
+	cp $< $@
 
-#---------------------------------------------------------------------------------
-# This rule links in binary data with the .bin extension
-#---------------------------------------------------------------------------------
-%.bin.o	:	%.bin
-#---------------------------------------------------------------------------------
-	@echo $(notdir $<)
-	@$(bin2o)
-
-#---------------------------------------------------------------------------------
-%.vpo.o	:	%.vpo
-#---------------------------------------------------------------------------------
-	@echo $(notdir $<)
-	@$(bin2o)
-
-#---------------------------------------------------------------------------------
-%.fpo.o	:	%.fpo
-#---------------------------------------------------------------------------------
-	@echo $(notdir $<)
-	@$(bin2o)
+$(OUTPUT).elf: $(OFILES)
 
 -include $(DEPENDS)
 
