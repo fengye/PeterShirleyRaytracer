@@ -87,10 +87,10 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 
 	camera cam;
 */
-	FLOAT_TYPE aspect_ratio = 16.0f / 9.0f;
-	FLOAT_TYPE viewport_height = 2.0f;
-    FLOAT_TYPE viewport_width = aspect_ratio * viewport_height;
-    FLOAT_TYPE focal_length = 1.0f;
+	FLOAT_TYPE aspect_ratio = world_data.aspect_ratio;
+	FLOAT_TYPE viewport_height = world_data.viewport_height;
+    FLOAT_TYPE viewport_width = world_data.viewport_width;
+    FLOAT_TYPE focal_length = world_data.focal_length;
 
 	point3_t origin = {{0, 0, 0}};
 	vec3_t horizontal = {{viewport_width, 0, 0}};
@@ -117,10 +117,6 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 			int width = (world_data.end_x - world_data.start_x);
 			int x = i - world_data.start_x;
 			int y = j - world_data.start_y;
-
-			//color_t color = {{u, v, 0.25}};
-
-			
 
 			vec3_mul(vec3_assignv(&horz_dir, horizontal.e), u);
 			vec3_mul(vec3_assignv(&vert_dir, vertical.e), v);

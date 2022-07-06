@@ -193,6 +193,10 @@ struct spu_job_t
 		input->end_x = img_width;
 		input->start_y = start_y;
 		input->end_y = end_y;
+		input->focal_length = 1.0f;
+		input->aspect_ratio = 16.0f / 9.0f;
+		input->viewport_height = 2.0f;
+		input->viewport_width = input->aspect_ratio * input->viewport_height;
 
 		int pixelCount = (input->end_x - input->start_x) * (input->end_y - input->start_y);
 		output = (pixel_data_t*)memalign(SPU_ALIGN, pixelCount * sizeof(pixel_data_t));

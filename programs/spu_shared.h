@@ -35,15 +35,19 @@ typedef union _sphere_data
 
 typedef struct _world_data
 {
-	int32_t 			img_width; // 8
-	int32_t 			img_height; // 8
+	int32_t 			img_width; // 4
+	int32_t 			img_height; // 4
 	sphere_data_t		sphere_1; // 16
 	sphere_data_t		sphere_2; // 16
-	int32_t  			start_x; // 8
-	int32_t  			start_y; // 8
-	int32_t 			end_x; // 8
-	int32_t 			end_y; // 8
-	uint32_t            padding[2]; // 16
+	int32_t  			start_x; // 4
+	int32_t  			start_y; // 4
+	int32_t 			end_x; // 4
+	int32_t 			end_y; // 4
+	float  				viewport_width;	// 4
+	float  				viewport_height; // 4
+	float  				focal_length; // 4
+	float  				aspect_ratio; // 4
+	uint32_t            padding[2]; // 8
 } world_data_t;
 
 typedef struct _named_pixel_data
