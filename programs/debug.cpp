@@ -16,6 +16,7 @@ static struct sockaddr_in stSockAddr;
 
 void debug_printf(const char* fmt, ...)
 {
+#ifdef _PPU_
   char buffer[0x800];
   va_list arg;
   va_start(arg, fmt);
@@ -23,6 +24,7 @@ void debug_printf(const char* fmt, ...)
   va_end(arg);
 
   netSendTo(SocketFD,buffer, strlen(buffer), 0, (struct sockaddr *)&stSockAddr, sizeof(stSockAddr));
+#endif
 }
 void debug_init()
 {

@@ -157,11 +157,14 @@ void rsxClearScreenSetBlendState(u32 clear_color)
 #include "spu_bin.h"
 #include "spustr.h"
 
+#include "spu_shared.h"
+
 #define ptr2ea(x) ((u64)(void *)(x))
 
 // Hijack printf
 #define printf debug_printf
 
+#if 0
 int spu_test()
 {
 	sysSpuImage image;
@@ -235,14 +238,45 @@ int spu_test()
 
 	return 0;
 }
+#endif
 
+#define SPU_COUNT 6
+#define SPU_ALIGN 16
+
+struct spu_job_t
+{
+	spu_shared_t* spu;
+	world_data_t* input;
+	pixel_data_t* output;
+};
+
+bool check_pad_input()
+{
+	padInfo padinfo;
+	padData paddata;
+
+
+	sysUtilCheckCallback();
+	ioPadGetInfo(&padinfo);
+	for(int p=0; p < MAX_PADS; p++)
+	{
+		if(padinfo.status[p])
+		{
+			ioPadGetData(p, &paddata);
+			if(paddata.BTN_CROSS)
+				return true;
+		}
+	}
+
+	return false;
+}
 
 int main()
 {
 	debug_init();
 
 	// SPU test
-	spu_test();
+	//spu_test();
 
 	// frame buffer
 	void *host_addr = memalign(CB_SIZE, HOST_SIZE);
@@ -253,8 +287,6 @@ int main()
 	sysUtilRegisterCallback(0,sysutil_exit_callback,NULL);
 
 	// input
-	padInfo padinfo;
-	padData paddata;
 	ioPadInit(7);
 
 	// camera
@@ -286,33 +318,175 @@ int main()
 	hittable_list world;
 	world.add(make_shared<sphere>(point3(0, 0, -1), 0.5));
 	world.add(make_shared<sphere>(point3(0, -100.5, 0), 100.0));
-	
+
+	/////////////////////////////
+	// FOR SPU INPUT
+	sphere_data_t sphere_1{
+		0, 0, -1, 0.5f
+	};
+	sphere_data_t sphere_2{
+		0, -100.5, 0, 100.0f
+	};
+	world_data_t* spu_world[SPU_COUNT];
+	const int32_t scanlines_per_job = img_height / SPU_COUNT / 2; // make sure we don't exceed SPU's local storage limit
+	for(int i = 0; i < SPU_COUNT; ++i)
+	{
+		spu_world[i] = (world_data_t*)memalign(SPU_ALIGN, sizeof(world_data_t));
+
+		spu_world[i]->img_width = img_width;
+		spu_world[i]->img_height = img_height;
+		spu_world[i]->sphere_1 = sphere_1;
+		spu_world[i]->sphere_2 = sphere_2;
+		spu_world[i]->start_x = 0;
+		spu_world[i]->end_x = img_width;
+		spu_world[i]->start_y = i * scanlines_per_job;
+		spu_world[i]->end_y = spu_world[i]->start_y + scanlines_per_job;
+	}
+	// the last one to cover to the end
+	//spu_world[SPU_COUNT-1]->end_y = img_height;
+	for(int i = 0; i < SPU_COUNT; ++i)
+	{
+		debug_printf("Job for SPU %d: %d->%d, %d->%d\n", i, spu_world[i]->start_x, spu_world[i]->end_x, spu_world[i]->start_y, spu_world[i]->end_y);
+	}
+	/////////////////////////////
+	// FOR SPU OUTPUT
+	pixel_data_t* spu_pixels[SPU_COUNT];
+	int32_t spu_pixels_size[SPU_COUNT];
+	for(int i = 0; i < SPU_COUNT; ++i)
+	{
+		int count = (spu_world[i]->end_x - spu_world[i]->start_x) * (spu_world[i]->end_y - spu_world[i]->start_y);
+		spu_pixels[i] = (pixel_data_t*)memalign(SPU_ALIGN, count * sizeof(pixel_data_t));
+		spu_pixels_size[i] = count * sizeof(pixel_data_t);
+
+		debug_printf("Job output for SPU %d: %08x sizeof %d\n", i, spu_pixels[i], spu_pixels_size[i]);
+	}
+
+	/////////////////////////////
+	// FOR SPU KICKOFF
+	sysSpuImage image;
+	uint32_t spuRet = 0;
+	u32 group_id;
+	sysSpuThreadAttribute attr = { "mythread", 8+1, SPU_THREAD_ATTR_NONE };
+	sysSpuThreadGroupAttribute grpattr = { 7+1, "mygroup", 0, {0} };
+	sysSpuThreadArgument arg[SPU_COUNT];
+//	u32 cause, status;
+
+	spu_shared_t *spu = (spu_shared_t*)memalign(SPU_ALIGN, SPU_COUNT*sizeof(spu_shared_t));
+//	spustr_t *spu = (spustr_t *)memalign(SPU_ALIGN, 6*sizeof(spustr_t));
+//	uint32_t *array = (uint32_t *)memalign(SPU_ALIGN, 24*sizeof(uint32_t));
+
+	debug_printf("Initializing %d SPUs... ", SPU_COUNT);
+	spuRet = sysSpuInitialize(SPU_COUNT, 0);
+	debug_printf("%08x\n", spuRet);
+
+	debug_printf("Loading ELF image... ");
+	spuRet = sysSpuImageImport(&image, spu_bin, 0);
+	debug_printf("%08x\n", spuRet);
+
+	debug_printf("Creating thread group... ");
+	spuRet = sysSpuThreadGroupCreate(&group_id, SPU_COUNT, 100, &grpattr);
+	debug_printf("%08x\n", spuRet);
+	debug_printf("group id = %d\n", group_id);
+
+	/* create 6 spu threads */
+	for (int i = 0; i < SPU_COUNT; i++) {
+		spu[i].rank = i;
+		spu[i].count = SPU_COUNT;
+		spu[i].sync = 0;
+		spu[i].i_data_ea = ptr2ea(spu_world[i]);
+		spu[i].i_data_sz = sizeof(world_data_t);
+		spu[i].o_data_ea = ptr2ea(spu_pixels[i]);
+		spu[i].o_data_sz = (uint32_t)spu_pixels_size[i];
+
+		arg[i].arg0 = ptr2ea(&spu[i]);
+
+		debug_printf("Creating SPU thread... ");
+		spuRet = sysSpuThreadInitialize(&spu[i].id, group_id, i, &image, &attr, &arg[i]);
+		debug_printf("%08x\n", spuRet);
+		debug_printf("thread id = %d\n", spu[i].id);
+
+		debug_printf("Configuring SPU... ");
+		spuRet = sysSpuThreadSetConfiguration(spu[i].id, SPU_SIGNAL1_OVERWRITE|SPU_SIGNAL2_OVERWRITE);
+		debug_printf("%08x\n", spuRet);
+	}
+
+	debug_printf("Starting SPU thread group... ");
+	spuRet = sysSpuThreadGroupStart(group_id);
+	debug_printf("%08x\n", spuRet);
+
+	/* Send signal notification to waiting spus */
+	for (int i = 0; i < SPU_COUNT; i++)
+	{
+		debug_printf("Sending signal... ");
+		spuRet = sysSpuThreadWriteSignal(spu[i].id, 0, 1);
+		debug_printf("%08x\n", spuRet);
+	}
+
 	running = 1;
+	
+	for (int i = 0; i < SPU_COUNT; i++)
+	{
+		debug_printf("Waiting for SPU %d to return...\n", i);
+		while (spu[i].sync == 0)
+		{
+			if (check_pad_input() || !running)
+				goto done;
+
+			usleep(2000);
+		}
+
+		// SPU work finished, print out result
+#if 0
+		pixel_data_t* output_pixels = spu_pixels[i];
+		int32_t output_pixels_count = spu_pixels_size[i] / sizeof(pixel_data_t);
+
+		for(int n = 0; n < output_pixels_count; ++n)
+		{
+			debug_printf("SPU %d Pixel %d: (%.3f, %.3f, %.3f, %.3f)\n", i, n,
+				output_pixels[n].rgba[0],
+				output_pixels[n].rgba[1],
+				output_pixels[n].rgba[2],
+				output_pixels[n].rgba[3]);
+		}
+#endif
+	}
+
+	for (int n = 0; n < SPU_COUNT; n++)
+	{
+		debug_printf("\nDraw SPU %d result\n", n);
+		world_data_t* world = spu_world[n];
+		pixel_data_t* output_pixels = spu_pixels[n];
+		for(int j = world->start_y; j < world->end_y; ++j)
+		{
+			for(int i = world->start_x; i < world->end_x; ++i)
+			{
+				if (check_pad_input() || !running)
+					goto done;
+
+				auto spu_y = j - world->start_y;
+
+				//debug_printf("\rWrite pixel at col %d from spu_y: %d", i, spu_y);
+				pixel_data_t pixel = output_pixels[ spu_y * img_width + i];
+				write_color_bitmap(&bitmap, i, (img_height - (j+1)), color(pixel.rgba[0], pixel.rgba[1], pixel.rgba[2]), 1);
+			}
+		}
+		// update screen for every spu job result
+		rsxClearScreenSetBlendState(CLEAR_COLOR);
+		blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);
+		flip();
+	}
 
 	// Actually this code starts from the top of the image, as the coordinate of the image is Y pointing upwards,
 	// then j = img_height-1 means the top row of the image
 	for(int j = img_height-1; j >= 0; --j)
 	{
 		debug_printf("\rScanline remaining: %d ", j);
-
 		for(int i = 0; i < img_width; ++i)
 		{
 			color pixel_color(0, 0, 0);
 			for (int s = 0; s < sample_per_pixel; ++s)
 			{
-				sysUtilCheckCallback();
-				ioPadGetInfo(&padinfo);
-				for(int p=0; p < MAX_PADS; p++)
-				{
-					if(padinfo.status[p])
-					{
-						ioPadGetData(p, &paddata);
-						if(paddata.BTN_CROSS)
-							goto done;
-					}
-				}
-
-				if (!running)
+				if(check_pad_input() || !running)
 					goto done;
 
 				double u = ((double)i + random_double()) / (img_width - 1);
@@ -334,30 +508,35 @@ int main()
 	}
 
 done:
+	////////////////////////////
+	// FOR SPU OUTPUT
+	for(int i = 0; i < SPU_COUNT; ++i)
+	{
+		free(spu_pixels[i]);
+	}
+
+	////////////////////////////
+	// FOR SPU SHUTDOWN
+	debug_printf("\nTerminating SPU thread group %d...", group_id);
+	spuRet = sysSpuThreadGroupTerminate(group_id, 0);
+	debug_printf("%08x\n", spuRet);
+//	debug_printf("Joining SPU thread group... ");
+//	debug_printf("%08x\n", sysSpuThreadGroupJoin(group_id, &cause, &status));
+//	debug_printf("cause=%d status=%d\n", cause, status);
+
+	debug_printf("Closing image... ");
+	spuRet = sysSpuImageClose(&image);
+	debug_printf("%08x\n", spuRet);
+
+
 	rsxClearScreenSetBlendState(CLEAR_COLOR);
 	blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);
 	flip();
 
 	debug_printf("\nDone.\n");
 
-	while(true)
-	{
-		sysUtilCheckCallback();
-		ioPadGetInfo(&padinfo);
-		bool pressedExit = false;
-		for(int p=0; p < MAX_PADS; p++)
-		{
-			if(padinfo.status[p]){
-				ioPadGetData(p, &paddata);
-				if(paddata.BTN_CROSS)
-					pressedExit = true;
-			}
-		}
-
-		if (pressedExit)
-			break;
+	while(!check_pad_input())
 		usleep(2000);
-	}
 	
 	debug_printf("Exiting...\n");
 	bitmapDestroy(&bitmap);

@@ -2,7 +2,9 @@
 #define _H_VEC3_
 
 #include <cmath>
+#ifdef _PPU_
 #include <iostream>
+#endif
 
 #include "random.h"
 
@@ -118,10 +120,12 @@ using color = vec3;
 
 //////////////////////////////////////////////////////////////////
 // vec3 global operator overriding
+#ifdef _PPU_
 inline std::ostream& operator<<(std::ostream& out, const vec3& v)
 {
 	return out << v[0] << ' ' << v[1] << ' ' << v[2];
 }
+#endif
 
 inline vec3 operator+(const vec3& lhs, const vec3& rhs)
 {
