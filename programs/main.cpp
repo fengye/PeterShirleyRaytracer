@@ -358,10 +358,8 @@ int main()
 	while(leftover_scanline > 0)
 	{
 		const int32_t min_scanlines_per_job = 1;
-		int32_t scanlines_per_job = (img_height) / SPU_COUNT / 2; // make sure we don't exceed SPU's local storage limit
+		int32_t scanlines_per_job = 10; // make sure we don't exceed SPU's local storage limit
 		scanlines_per_job = std::max(min_scanlines_per_job, scanlines_per_job);
-
-		//const int32_t max_scanlines_per_job = scanlines_per_job * 2;
 
 		bool job_enough = false;
 		int32_t start_scaneline = img_height - leftover_scanline;
@@ -465,8 +463,8 @@ int main()
 					auto spu_y = j - world->start_y;
 
 					//debug_printf("\rWrite pixel at col %d from spu_y: %d", i, spu_y);
-					pixel_data_t pixel = output_pixels[ spu_y * img_width + i];
-					write_color_bitmap(&bitmap, i, (img_height - (j+1)), color(pixel.rgba[0], pixel.rgba[1], pixel.rgba[2]), 1);
+					pixel_data_t* pixel = &output_pixels[ spu_y * img_width + i];
+					write_pixel_bitmap(&bitmap, i, (img_height - (j+1)), pixel);
 				}
 			}
 			// update screen for every spu job result

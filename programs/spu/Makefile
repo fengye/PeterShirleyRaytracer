@@ -25,7 +25,7 @@ INCLUDES	:=	../
 # options for code generation
 #---------------------------------------------------------------------------------
 
-CFLAGS		=	-O2 -Wall $(MACHDEP) $(INCLUDE)
+CFLAGS		=	-O2 -Wall $(MACHDEP) $(INCLUDE) -D_SPU_
 CXXFLAGS	=	$(CFLAGS)
 
 LDFLAGS		=	$(MACHDEP) -Wl,-Map,$(notdir $@).map

@@ -6,6 +6,7 @@
 #include "debug.h"
 #include "vec3.h"
 #include "bitmap.h"
+#include "spu_shared.h"
 
 void write_color(std::ostream& out, const color& pixel_color, int samples_per_pixel)
 {
@@ -42,6 +43,12 @@ void write_color_bitmap(Bitmap* bitmap, int x, int y, const color& pixel_color, 
 		(u8)(255.999 * clamp(r, 0.0, 0.999)),
 		(u8)(255.999 * clamp(g, 0.0, 0.999)),
 		(u8)(255.999 * clamp(b, 0.0, 0.999)), 0xff);
+}
+
+void write_pixel_bitmap(Bitmap* bitmap, int x, int y, const pixel_data_t* pixel)
+{
+	bitmapUpdateRGBA(bitmap, (u32)x, (u32)y, 
+		pixel->rgba[0], pixel->rgba[1], pixel->rgba[2], pixel->rgba[3]);
 }
 
 

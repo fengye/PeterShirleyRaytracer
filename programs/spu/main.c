@@ -4,22 +4,15 @@
 
 #define TAG 1
 
-//#include "spustr.h"
 #include "spu_shared.h"
 #include <malloc.h>
+#include <stdlib.h>
 
-#ifdef __cplusplus
-#include <memory>
 #include "vec3.h"
-#include "sphere.h"
-#include "hittable_list.h"
-#include "camera.h"
-#include "vec3.h"
-#else
+#include "color_pixel_util.h"
 
-#define NULL (0)
+
 #define nullptr NULL
-#endif
 
 #define SPU_ALIGN (16)
 #define DMA_TRANSFER_LIMIT (16384)
@@ -27,7 +20,6 @@
 /* The effective address of the input structure */
 uint64_t spu_ea;
 /* A copy of the structure sent by ppu */
-//spustr_t spu __attribute__((aligned(16)));
 spu_shared_t spu __attribute__((aligned(SPU_ALIGN)));
 
 uint64_t world_data_ea;
@@ -93,7 +85,11 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 			int x = i - world_data.start_x;
 			int y = j - world_data.start_y;
 
+			color_t color = {{u, v, 0.25}};
+
 			pixel_data_t* pixel = &pixels_data[y * width  + x];
+
+			color_to_pixel_data(&color, pixel);
 			/*
 			color pixel_color;
 			ray r = cam.get_ray(u, v);
@@ -101,10 +97,6 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 			auto t = 0.5 * (ray_dir.y() + 1.0); // t <- [0, 1]
 			pixel_color = (1.0 - t) * color(1.0, 1.0, 1.0) + t * color(0.5, 0.7, 1.0); // white blend with blue graident
 			*/
-			pixel->named.r = (float)u;
-			pixel->named.g = (float)v;
-			pixel->named.b = 0.25f;
-			pixel->named.a = 1.0f;
 		}
 	}
 
@@ -119,22 +111,6 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 		byte_written += bytes_to_write;
 	}
 
-#if 0
-	/* read 4 integers, depending on spu rank */
-	uint64_t ea = spu.array_ea + spu.rank*16;
-	vec_uint4 v;
-	mfc_get(&v, ea, 16, TAG, 0, 0);
-	wait_for_completion();
-
-	/* multiply all elements by 2 */
-	v = v * spu_splats((uint32_t)2);
-
-	/* write the result back */
-	mfc_put(&v, ea, 16, TAG, 0, 0);
-	/* no wait for completion here, as it's done after response message,
-	  and the sync element is send with a fence so we're sure our array
-	  share is written back before sync */
-#endif
 	/* send the response message */
 	send_response();
 	wait_for_completion();

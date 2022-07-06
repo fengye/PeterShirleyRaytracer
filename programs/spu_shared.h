@@ -1,6 +1,8 @@
 #ifndef _H_SPU_SHARED_
 #define _H_SPU_SHARED_
 
+#include "floattype.h"
+#include <stdint.h>
 #pragma pack(push)
 #pragma pack(1)
 
@@ -46,16 +48,16 @@ typedef struct _world_data
 
 typedef struct _named_pixel_data
 {
-	float r;
-	float g;
-	float b;
-	float a;
+	uint8_t r;
+	uint8_t g;
+	uint8_t b;
+	uint8_t a;
 } named_pixel_data;
 
 typedef union _pixel_data
 {
 	named_pixel_data named;
-	float rgba[4];
+	uint8_t rgba[4];
 } pixel_data_t;
 
 #pragma pack(pop)
