@@ -11,6 +11,7 @@
 #include <malloc.h>
 #include <unistd.h>
 #include <cfloat>
+#include <vector>
 // PS3 specific
 #include <io/pad.h>
 #include <rsx/rsx.h>
@@ -155,7 +156,6 @@ void rsxClearScreenSetBlendState(u32 clear_color)
 #include <sys/spu.h>
 
 #include "spu_bin.h"
-#include "spustr.h"
 
 #include "spu_shared.h"
 
@@ -164,91 +164,112 @@ void rsxClearScreenSetBlendState(u32 clear_color)
 // Hijack printf
 #define printf debug_printf
 
-#if 0
-int spu_test()
-{
-	sysSpuImage image;
-	u32 group_id;
-	sysSpuThreadAttribute attr = { "mythread", 8+1, SPU_THREAD_ATTR_NONE };
-	sysSpuThreadGroupAttribute grpattr = { 7+1, "mygroup", 0, {0} };
-	sysSpuThreadArgument arg[6];
-	u32 cause, status;
-	int i;
-	spustr_t *spu = (spustr_t *)memalign(16, 6*sizeof(spustr_t));
-	uint32_t *array = (uint32_t *)memalign(16, 24*sizeof(uint32_t));
-
-	printf("Initializing 6 SPUs... ");
-	printf("%08x\n", sysSpuInitialize(6, 0));
-
-	printf("Loading ELF image... ");
-	printf("%08x\n", sysSpuImageImport(&image, spu_bin, 0));
-
-	printf("Creating thread group... ");
-	printf("%08x\n", sysSpuThreadGroupCreate(&group_id, 6, 100, &grpattr));
-	printf("group id = %d\n", group_id);
-
-	/* create 6 spu threads */
-	for (i = 0; i < 6; i++) {
-		spu[i].rank = i;
-		spu[i].count = 6;
-		spu[i].sync = 0;
-		spu[i].array_ea = ptr2ea(array);
-		arg[i].arg0 = ptr2ea(&spu[i]);
-
-		printf("Creating SPU thread... ");
-		printf("%08x\n", sysSpuThreadInitialize(&spu[i].id, group_id, i, &image, &attr, &arg[i]));
-		printf("thread id = %d\n", spu[i].id);
-
-		printf("Configuring SPU... %08x\n",
-		sysSpuThreadSetConfiguration(spu[i].id, SPU_SIGNAL1_OVERWRITE|SPU_SIGNAL2_OVERWRITE));
-	}
-
-	printf("Starting SPU thread group... ");
-	printf("%08x\n", sysSpuThreadGroupStart(group_id));
-
-	printf("Initial array: ");
-	for (i = 0; i < 24; i++) {
-		array[i] = i+1;
-		printf(" %d", array[i]);
-	}
-	printf("\n");
-
-	/* Send signal notification to waiting spus */
-	for (i = 0; i < 6; i++)
-		printf("Sending signal... %08x\n",
-			sysSpuThreadWriteSignal(spu[i].id, 0, 1));
-
-	printf("Waiting for SPUs to return...\n");
-	for (i = 0; i < 6; i++)
-		while (spu[i].sync == 0);
-
-	printf("Output array: ");
-	for (i = 0; i < 24; i++)
-		printf(" %d", array[i]);
-	printf("\n");
-
-	printf("Joining SPU thread group... ");
-	printf("%08x\n", sysSpuThreadGroupJoin(group_id, &cause, &status));
-	printf("cause=%d status=%d\n", cause, status);
-
-	printf("Closing image... %08x\n", sysSpuImageClose(&image));
-
-	free(array);
-	free(spu);
-
-	return 0;
-}
-#endif
-
 #define SPU_COUNT 6
 #define SPU_ALIGN 16
 
+// temp world data
+sphere_data_t sphere_1{
+			0, 0, -1, 0.5f
+};
+sphere_data_t sphere_2{
+	0, -100.5, 0, 100.0f
+};
+
 struct spu_job_t
 {
-	spu_shared_t* spu;
-	world_data_t* input;
-	pixel_data_t* output;
+	spu_shared_t* spu = nullptr;
+	world_data_t* input = nullptr;
+	pixel_data_t* output = nullptr;
+	uint32_t output_size = 0;
+
+	spu_job_t(int32_t img_width, int32_t img_height, int32_t start_y, int32_t end_y, int32_t spu_index)
+	{
+		input = (world_data_t*)memalign(SPU_ALIGN, sizeof(world_data_t));
+		input->img_width = img_width;
+		input->img_height = img_height;
+		input->sphere_1 = sphere_1;
+		input->sphere_2 = sphere_2;
+		input->start_x = 0;
+		input->end_x = img_width;
+		input->start_y = start_y;
+		input->end_y = end_y;
+
+		int pixelCount = (input->end_x - input->start_x) * (input->end_y - input->start_y);
+		output = (pixel_data_t*)memalign(SPU_ALIGN, pixelCount * sizeof(pixel_data_t));
+		output_size = pixelCount * sizeof(pixel_data_t);
+
+		spu = (spu_shared_t*)memalign(SPU_ALIGN, SPU_COUNT*sizeof(spu_shared_t));
+		spu->rank = spu_index;
+		spu->count = SPU_COUNT;
+		spu->sync = 0;
+		spu->i_data_ea = ptr2ea(input);
+		spu->i_data_sz = sizeof(world_data_t);
+		spu->o_data_ea = ptr2ea(output);
+		spu->o_data_sz = output_size;
+	}
+
+	void update_job(int32_t start_y, int32_t end_y)
+	{
+		input->start_y = start_y;
+		input->end_y = end_y;
+
+		free(output);
+
+		int pixelCount = (input->end_x - input->start_x) * (input->end_y - input->start_y);
+		output = (pixel_data_t*)memalign(SPU_ALIGN, pixelCount * sizeof(pixel_data_t));
+		output_size = pixelCount * sizeof(pixel_data_t);
+
+		spu->o_data_ea = ptr2ea(output);
+		spu->o_data_sz = output_size;
+	}
+
+	uint32_t pre_kickoff(sysSpuImage* image, sysSpuThreadAttribute* attr, uint32_t group_id)
+	{
+		spu->sync = 0;
+
+		uint32_t spuRet = 0;
+		sysSpuThreadArgument arg;
+		arg.arg0 = ptr2ea(spu);
+
+		debug_printf("Creating SPU thread... ");
+		spuRet = sysSpuThreadInitialize(&spu->id, group_id, spu->rank, image, attr, &arg);
+		debug_printf("%08x\n", spuRet);
+		debug_printf("thread id = %d\n", spu->id);
+
+		debug_printf("Configuring SPU... ");
+		spuRet = sysSpuThreadSetConfiguration(spu->id, SPU_SIGNAL1_OVERWRITE|SPU_SIGNAL2_OVERWRITE);
+		debug_printf("%08x\n", spuRet);
+
+		return spuRet;
+	}
+
+	uint32_t send_signal()
+	{
+		return sysSpuThreadWriteSignal(spu->id, 0, 1);
+	}
+
+	void print_spu_job() const
+	{
+		debug_printf("Input for SPU %d: %d->%d, %d->%d\n"
+					"Output for SPU %d: %08x sizeof %d\n",
+					spu->rank, input->start_x, input->end_x, input->start_y, input->end_y,
+					spu->rank, output, output_size);
+	}
+
+	uint32_t check_sync() const
+	{
+		return spu->sync;
+	}
+
+	~spu_job_t()
+	{
+		free(output);
+		free(input);
+		free(spu);
+	}
 };
+
+static std::vector<std::shared_ptr<spu_job_t>> s_spu_jobs;
 
 bool check_pad_input()
 {
@@ -320,45 +341,18 @@ int main()
 	world.add(make_shared<sphere>(point3(0, -100.5, 0), 100.0));
 
 	/////////////////////////////
-	// FOR SPU INPUT
-	sphere_data_t sphere_1{
-		0, 0, -1, 0.5f
-	};
-	sphere_data_t sphere_2{
-		0, -100.5, 0, 100.0f
-	};
-	world_data_t* spu_world[SPU_COUNT];
+	// FOR SPU JOBS
 	const int32_t scanlines_per_job = img_height / SPU_COUNT / 2; // make sure we don't exceed SPU's local storage limit
-	for(int i = 0; i < SPU_COUNT; ++i)
-	{
-		spu_world[i] = (world_data_t*)memalign(SPU_ALIGN, sizeof(world_data_t));
 
-		spu_world[i]->img_width = img_width;
-		spu_world[i]->img_height = img_height;
-		spu_world[i]->sphere_1 = sphere_1;
-		spu_world[i]->sphere_2 = sphere_2;
-		spu_world[i]->start_x = 0;
-		spu_world[i]->end_x = img_width;
-		spu_world[i]->start_y = i * scanlines_per_job;
-		spu_world[i]->end_y = spu_world[i]->start_y + scanlines_per_job;
-	}
-	// the last one to cover to the end
-	//spu_world[SPU_COUNT-1]->end_y = img_height;
 	for(int i = 0; i < SPU_COUNT; ++i)
 	{
-		debug_printf("Job for SPU %d: %d->%d, %d->%d\n", i, spu_world[i]->start_x, spu_world[i]->end_x, spu_world[i]->start_y, spu_world[i]->end_y);
+		s_spu_jobs.push_back(
+			std::make_shared<spu_job_t>(img_width, img_height, i * scanlines_per_job, (i+1) * scanlines_per_job, i));
 	}
-	/////////////////////////////
-	// FOR SPU OUTPUT
-	pixel_data_t* spu_pixels[SPU_COUNT];
-	int32_t spu_pixels_size[SPU_COUNT];
-	for(int i = 0; i < SPU_COUNT; ++i)
-	{
-		int count = (spu_world[i]->end_x - spu_world[i]->start_x) * (spu_world[i]->end_y - spu_world[i]->start_y);
-		spu_pixels[i] = (pixel_data_t*)memalign(SPU_ALIGN, count * sizeof(pixel_data_t));
-		spu_pixels_size[i] = count * sizeof(pixel_data_t);
 
-		debug_printf("Job output for SPU %d: %08x sizeof %d\n", i, spu_pixels[i], spu_pixels_size[i]);
+	for(const auto &job : s_spu_jobs)
+	{
+		job->print_spu_job();
 	}
 
 	/////////////////////////////
@@ -368,12 +362,8 @@ int main()
 	u32 group_id;
 	sysSpuThreadAttribute attr = { "mythread", 8+1, SPU_THREAD_ATTR_NONE };
 	sysSpuThreadGroupAttribute grpattr = { 7+1, "mygroup", 0, {0} };
-	sysSpuThreadArgument arg[SPU_COUNT];
+//	sysSpuThreadArgument arg[SPU_COUNT];
 //	u32 cause, status;
-
-	spu_shared_t *spu = (spu_shared_t*)memalign(SPU_ALIGN, SPU_COUNT*sizeof(spu_shared_t));
-//	spustr_t *spu = (spustr_t *)memalign(SPU_ALIGN, 6*sizeof(spustr_t));
-//	uint32_t *array = (uint32_t *)memalign(SPU_ALIGN, 24*sizeof(uint32_t));
 
 	debug_printf("Initializing %d SPUs... ", SPU_COUNT);
 	spuRet = sysSpuInitialize(SPU_COUNT, 0);
@@ -388,26 +378,10 @@ int main()
 	debug_printf("%08x\n", spuRet);
 	debug_printf("group id = %d\n", group_id);
 
-	/* create 6 spu threads */
-	for (int i = 0; i < SPU_COUNT; i++) {
-		spu[i].rank = i;
-		spu[i].count = SPU_COUNT;
-		spu[i].sync = 0;
-		spu[i].i_data_ea = ptr2ea(spu_world[i]);
-		spu[i].i_data_sz = sizeof(world_data_t);
-		spu[i].o_data_ea = ptr2ea(spu_pixels[i]);
-		spu[i].o_data_sz = (uint32_t)spu_pixels_size[i];
-
-		arg[i].arg0 = ptr2ea(&spu[i]);
-
-		debug_printf("Creating SPU thread... ");
-		spuRet = sysSpuThreadInitialize(&spu[i].id, group_id, i, &image, &attr, &arg[i]);
-		debug_printf("%08x\n", spuRet);
-		debug_printf("thread id = %d\n", spu[i].id);
-
-		debug_printf("Configuring SPU... ");
-		spuRet = sysSpuThreadSetConfiguration(spu[i].id, SPU_SIGNAL1_OVERWRITE|SPU_SIGNAL2_OVERWRITE);
-		debug_printf("%08x\n", spuRet);
+	/* Prepare 6 SPUs */
+	for(auto &job : s_spu_jobs)
+	{
+		job->pre_kickoff(&image, &attr, group_id);
 	}
 
 	debug_printf("Starting SPU thread group... ");
@@ -415,19 +389,18 @@ int main()
 	debug_printf("%08x\n", spuRet);
 
 	/* Send signal notification to waiting spus */
-	for (int i = 0; i < SPU_COUNT; i++)
+	for (size_t i = 0; i < s_spu_jobs.size(); i++)
 	{
-		debug_printf("Sending signal... ");
-		spuRet = sysSpuThreadWriteSignal(spu[i].id, 0, 1);
-		debug_printf("%08x\n", spuRet);
+		debug_printf("Sending signal... %d\n", i);
+		s_spu_jobs[i]->send_signal();
 	}
 
 	running = 1;
 	
-	for (int i = 0; i < SPU_COUNT; i++)
+	for (size_t i = 0; i < s_spu_jobs.size(); i++)
 	{
 		debug_printf("Waiting for SPU %d to return...\n", i);
-		while (spu[i].sync == 0)
+		while (s_spu_jobs[i]->check_sync() == 0)
 		{
 			if (check_pad_input() || !running)
 				goto done;
@@ -451,11 +424,11 @@ int main()
 #endif
 	}
 
-	for (int n = 0; n < SPU_COUNT; n++)
+	for (size_t n = 0; n < s_spu_jobs.size(); n++)
 	{
 		debug_printf("\nDraw SPU %d result\n", n);
-		world_data_t* world = spu_world[n];
-		pixel_data_t* output_pixels = spu_pixels[n];
+		world_data_t* world = s_spu_jobs[n]->input;
+		pixel_data_t* output_pixels = s_spu_jobs[n]->output;
 		for(int j = world->start_y; j < world->end_y; ++j)
 		{
 			for(int i = world->start_x; i < world->end_x; ++i)
@@ -475,6 +448,10 @@ int main()
 		blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);
 		flip();
 	}
+
+	////////////////////////////
+	// SPU JOBS FINALIZE
+	s_spu_jobs.clear();
 
 	// Actually this code starts from the top of the image, as the coordinate of the image is Y pointing upwards,
 	// then j = img_height-1 means the top row of the image
@@ -508,13 +485,6 @@ int main()
 	}
 
 done:
-	////////////////////////////
-	// FOR SPU OUTPUT
-	for(int i = 0; i < SPU_COUNT; ++i)
-	{
-		free(spu_pixels[i]);
-	}
-
 	////////////////////////////
 	// FOR SPU SHUTDOWN
 	debug_printf("\nTerminating SPU thread group %d...", group_id);
