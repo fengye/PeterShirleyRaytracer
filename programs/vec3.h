@@ -198,11 +198,15 @@ extern vec3_t* vec3_normalise(vec3_t* v);
 extern FLOAT_TYPE vec3_dot(const vec3_t* u, const vec3_t* v);
 extern vec3_t vec3_cross(const vec3_t* u, const vec3_t* v);
 
+extern FLOAT_TYPE vec3_x(const vec3_t* v);
+extern FLOAT_TYPE vec3_y(const vec3_t* v);
+extern FLOAT_TYPE vec3_z(const vec3_t* v);
 extern vec3_t* vec3_assign(vec3_t* v, FLOAT_TYPE x, FLOAT_TYPE y, FLOAT_TYPE z);
-extern vec3_t* vec3_assignv(vec3_t* v, FLOAT_TYPE* xyz);
+extern vec3_t* vec3_assignv(vec3_t* v, const FLOAT_TYPE* xyz);
 extern vec3_t  vec3_duplicate(vec3_t* v);
 extern vec3_t* vec3_negate(vec3_t* v);
 extern vec3_t* vec3_add(vec3_t* v, const vec3_t* rhs);
+extern vec3_t* vec3_minus(vec3_t* v, const vec3_t* rhs);
 extern vec3_t* vec3_mul(vec3_t* v, FLOAT_TYPE t);
 extern vec3_t* vec3_mulv(vec3_t* v, const vec3_t* rhs);
 extern vec3_t* vec3_div(vec3_t* v, FLOAT_TYPE t);

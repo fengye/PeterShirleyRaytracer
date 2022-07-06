@@ -4,6 +4,21 @@
 #include "random.h"
 
 #ifdef _SPU_
+
+FLOAT_TYPE vec3_x(const vec3_t* v)
+{
+	return v->e[0];
+}
+FLOAT_TYPE vec3_y(const vec3_t* v)
+{
+	return v->e[1];
+}
+FLOAT_TYPE vec3_z(const vec3_t* v)
+{
+	return v->e[2];
+}
+
+
 vec3_t vec3_unit_vector(const vec3_t* v)
 {
 	FLOAT_TYPE len = vec3_length(v);
@@ -52,7 +67,7 @@ vec3_t* vec3_assign(vec3_t* v, FLOAT_TYPE x, FLOAT_TYPE y, FLOAT_TYPE z)
 	return v;
 }
 
-vec3_t* vec3_assignv(vec3_t* v, FLOAT_TYPE* xyz)
+vec3_t* vec3_assignv(vec3_t* v, const FLOAT_TYPE* xyz)
 {
 	memcpy(v->e, xyz, sizeof(FLOAT_TYPE) * 3);
 	return v;
@@ -81,6 +96,15 @@ vec3_t* vec3_add(vec3_t* v, const vec3_t* rhs)
 	v->e[2] += rhs->e[2];
 	return v;
 }
+
+vec3_t* vec3_minus(vec3_t* v, const vec3_t* rhs)
+{
+	v->e[0] -= rhs->e[0];
+	v->e[1] -= rhs->e[1];
+	v->e[2] -= rhs->e[2];
+	return v;
+}
+
 vec3_t* vec3_mul(vec3_t* v, FLOAT_TYPE t)
 {
 	v->e[0] *= t;

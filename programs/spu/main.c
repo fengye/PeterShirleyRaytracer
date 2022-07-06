@@ -9,6 +9,7 @@
 #include <stdlib.h>
 
 #include "vec3.h"
+#include "ray.h"
 #include "color_pixel_util.h"
 
 
@@ -40,6 +41,18 @@ static void send_response() {
 	/* send sync to ppu variable with fence (this ensures sync is written AFTER response) */
 	uint64_t ea = spu_ea + ((uint32_t)&spu.sync) - ((uint32_t)&spu);
 	mfc_putf(&spu.sync, ea, 4, TAG, 0, 0);
+}
+
+
+static color_t ray_color(const ray_t* r) {
+    vec3_t unit_direction = vec3_unit_vector(&r->dir);
+    FLOAT_TYPE t = 0.5f * (vec3_y(&unit_direction) + 1.0f);
+    
+    color_t white = {{1.0f, 1.0f, 1.0f}};
+    color_t blue = {{0.5f, 0.7f, 1.0f}};
+
+    vec3_add(vec3_mul(&white, 1.0f - t), vec3_mul(&blue, t));
+    return white;
 }
 
 int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
@@ -74,18 +87,49 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 
 	camera cam;
 */
+	FLOAT_TYPE aspect_ratio = 16.0f / 9.0f;
+	FLOAT_TYPE viewport_height = 2.0f;
+    FLOAT_TYPE viewport_width = aspect_ratio * viewport_height;
+    FLOAT_TYPE focal_length = 1.0f;
+
+	point3_t origin = {{0, 0, 0}};
+	vec3_t horizontal = {{viewport_width, 0, 0}};
+	vec3_t vertical = {{0, viewport_height, 0}};
+
+	//auto lower_left_corner = origin - horizontal/2 - vertical/2 - vec3(0, 0, focal_length);
+	vec3_t half_horizontal = {{viewport_width/2, 0, 0}};
+	vec3_t half_vertical  = {{0, viewport_height/2, 0}};
+	vec3_t focal_offset = {{0, 0, focal_length}};
+	point3_t lower_left_corner;
+	vec3_minus(vec3_minus(vec3_minus(vec3_assignv(&lower_left_corner, origin.e), &half_horizontal), &half_vertical), &focal_offset);
+    
+
+	vec3_t horz_dir;
+	vec3_t vert_dir;
+	vec3_t target;
 	for(int j = world_data.start_y; j < world_data.end_y; ++j)
 	{
 		for(int i = world_data.start_x; i < world_data.end_x; ++i)
 		{
-			double u = ((double)i) / (world_data.img_width - 1);
-			double v = ((double)j) / (world_data.img_height - 1);
+			FLOAT_TYPE u = ((FLOAT_TYPE)i) / (world_data.img_width - 1);
+			FLOAT_TYPE v = ((FLOAT_TYPE)j) / (world_data.img_height - 1);
 
 			int width = (world_data.end_x - world_data.start_x);
 			int x = i - world_data.start_x;
 			int y = j - world_data.start_y;
 
-			color_t color = {{u, v, 0.25}};
+			//color_t color = {{u, v, 0.25}};
+
+			
+
+			vec3_mul(vec3_assignv(&horz_dir, horizontal.e), u);
+			vec3_mul(vec3_assignv(&vert_dir, vertical.e), v);
+			vec3_minus(vec3_add(vec3_add(vec3_assignv(&target, lower_left_corner.e), &horz_dir), &vert_dir), &origin);
+
+			ray_t r;
+			ray_assign(&r, &origin, &target);
+
+            color_t color = ray_color(&r);
 
 			pixel_data_t* pixel = &pixels_data[y * width  + x];
 
