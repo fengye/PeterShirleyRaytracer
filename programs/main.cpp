@@ -20,6 +20,7 @@
 // ~PS3 specific
 #include "bitmap.h"
 #include "rsxutil.h"
+#include <sys/time.h>
 
 #define STOP_SPU_BY_TERMINATION 0
 
@@ -343,6 +344,10 @@ int main()
 	// input
 	ioPadInit(7);
 
+	struct timeval time_now{};
+    gettimeofday(&time_now, nullptr);
+    int32_t start_millisecond = (time_now.tv_sec) * 1000 + (time_now.tv_usec) / 1000;
+
 	// camera
 	camera cam;
 
@@ -569,6 +574,7 @@ done:
 
 	////////////////////////////
 	// FOR SPU JOB SHUTDOWN
+	debug_printf("Signaling all SPUs to quit... ");
 	for(auto& device : s_spu_devices)
 	{
 		device->signal_quit();
@@ -598,7 +604,7 @@ done:
 	// FOR SPU DEVICE SHUTDOWN
 	s_spu_devices.clear();
 
-	debug_printf("Closing image... ");
+	debug_printf("Closing SPU image... ");
 	spuRet = sysSpuImageClose(&image);
 	debug_printf("%08x\n", spuRet);
 
@@ -607,7 +613,12 @@ done:
 	blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);
 	flip();
 
+	gettimeofday(&time_now, nullptr);
+	int32_t end_millisecond = (time_now.tv_sec) * 1000 + (time_now.tv_usec) / 1000;
+
 	debug_printf("\nDone.\n");
+	debug_printf("Time used: %dms\n", end_millisecond - start_millisecond);
+	debug_printf("Ray per second: %.2f\n", float(img_width * img_height * SAMPLES_PER_PIXEL) / (end_millisecond - start_millisecond));
 
 	while(!check_pad_input())
 		usleep(32000);
