@@ -44,7 +44,7 @@ static void send_response() {
 	mfc_putf(&spu.sync, ea, 4, TAG, 0, 0);
 }
 
-static bool hit_sphere(const point3_t* center, FLOAT_TYPE radius, const ray_t* r) 
+static FLOAT_TYPE hit_sphere(const point3_t* center, FLOAT_TYPE radius, const ray_t* r) 
 {
 	//vec3 oc = r.origin() - center;
 	vec3_t oc = vec3_duplicate(&r->orig);
@@ -58,17 +58,35 @@ static bool hit_sphere(const point3_t* center, FLOAT_TYPE radius, const ray_t* r
     FLOAT_TYPE c = vec3_dot(&oc, &oc) - radius*radius;
 
     FLOAT_TYPE discriminant = b*b - 4*a*c;
-    return (discriminant > 0);
+    if (discriminant < 0)
+    {
+    	return -1.0f;
+    }
+    else
+    {
+    	return (-b - sqrtf(discriminant)) / (2.0f*a);
+    }
 }
 
 static color_t ray_color(const ray_t* r) {
 	point3_t sphere_ori = {{0, 0, -1}};
 	FLOAT_TYPE sphere_rad = 0.5f;
-	if (hit_sphere(&sphere_ori, sphere_rad, r))
-        return vec3_create(1, 0, 0);
+	FLOAT_TYPE t = hit_sphere(&sphere_ori, sphere_rad, r);
+
+	if (t > 0)
+	{
+		// vec3 N = vec3_unit_vector(r.at(t) - vec3(0,0,-1));
+		point3_t p = ray_at(r, t);
+		vec3_minus(&p, &sphere_ori);
+
+		vec3_t N = vec3_unit_vector(&p);
+		vec3_t one = vec3_create(1, 1, 1);
+		vec3_mul(vec3_add(&N, &one), 0.5f);
+        return N;
+	}
 
     vec3_t unit_direction = vec3_unit_vector(&r->dir);
-    FLOAT_TYPE t = 0.5f * (vec3_y(&unit_direction) + 1.0f);
+    t = 0.5f * (vec3_y(&unit_direction) + 1.0f);
     
     color_t white = {{1.0f, 1.0f, 1.0f}};
     color_t blue = {{0.5f, 0.7f, 1.0f}};
