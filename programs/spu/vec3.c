@@ -59,6 +59,12 @@ vec3_t vec3_cross(const vec3_t* u, const vec3_t* v)
 	return cr;
 }
 
+vec3_t vec3_create(FLOAT_TYPE x, FLOAT_TYPE y, FLOAT_TYPE z)
+{
+	vec3_t v = {{x, y, z}};
+	return v;
+}
+
 vec3_t* vec3_assign(vec3_t* v, FLOAT_TYPE x, FLOAT_TYPE y, FLOAT_TYPE z)
 {
 	v->e[0] = x;
@@ -73,7 +79,7 @@ vec3_t* vec3_assignv(vec3_t* v, const FLOAT_TYPE* xyz)
 	return v;
 }
 
-vec3_t  vec3_duplicate(vec3_t* v)
+vec3_t  vec3_duplicate(const vec3_t* v)
 {
 	vec3_t vv = {
 		.e = {v->e[0], v->e[1], v->e[2]}

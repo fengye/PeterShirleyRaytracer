@@ -7,6 +7,7 @@
 #include "spu_shared.h"
 #include <malloc.h>
 #include <stdlib.h>
+#include <stdbool.h>
 
 #include "vec3.h"
 #include "ray.h"
@@ -43,8 +44,29 @@ static void send_response() {
 	mfc_putf(&spu.sync, ea, 4, TAG, 0, 0);
 }
 
+static bool hit_sphere(const point3_t* center, FLOAT_TYPE radius, const ray_t* r) 
+{
+	//vec3 oc = r.origin() - center;
+	vec3_t oc = vec3_duplicate(&r->orig);
+	vec3_minus(&oc, center);
+    
+    //auto a = dot(r.direction(), r.direction());
+    FLOAT_TYPE a = vec3_dot(&r->dir, &r->dir);
+    //auto b = 2.0 * dot(oc, r.direction());
+    FLOAT_TYPE b = 2.0f * vec3_dot(&oc, &r->dir);
+    //auto c = dot(oc, oc) - radius*radius;
+    FLOAT_TYPE c = vec3_dot(&oc, &oc) - radius*radius;
+
+    FLOAT_TYPE discriminant = b*b - 4*a*c;
+    return (discriminant > 0);
+}
 
 static color_t ray_color(const ray_t* r) {
+	point3_t sphere_ori = {{0, 0, -1}};
+	FLOAT_TYPE sphere_rad = 0.5f;
+	if (hit_sphere(&sphere_ori, sphere_rad, r))
+        return vec3_create(1, 0, 0);
+
     vec3_t unit_direction = vec3_unit_vector(&r->dir);
     FLOAT_TYPE t = 0.5f * (vec3_y(&unit_direction) + 1.0f);
     
