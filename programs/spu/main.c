@@ -218,6 +218,8 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 			/* send the response message */
 			send_response(SYNC_FINISHED);
 			wait_for_completion();
+
+			free(pixels_data);
 		}
 	}
 
