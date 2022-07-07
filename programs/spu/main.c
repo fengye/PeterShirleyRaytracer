@@ -13,6 +13,7 @@
 #include "ray.h"
 #include "color_pixel_util.h"
 #include "sphere.h"
+#include "camera.h"
 
 #define nullptr NULL
 
@@ -108,19 +109,6 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 	/* blocking wait for signal notification */
 	spu_read_signal1();
 
-/*
-	hittable_list world;
-	world.add(std::make_shared<sphere>(point3(
-		world_data.sphere_1.named.ox,
-		world_data.sphere_1.named.oy,
-		world_data.sphere_1.named.oz), world_data.sphere_1.named.radius ));
-	world.add(std::make_shared<sphere>(point3(
-		world_data.sphere_2.named.ox,
-		world_data.sphere_2.named.oy,
-		world_data.sphere_2.named.oz), world_data.sphere_2.named.radius ));
-
-	camera cam;
-*/
 	point3_t o1 = vec3_create(
 			world_data.sphere_1.named.ox,
 			world_data.sphere_1.named.oy,
@@ -133,56 +121,33 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 	spheres[0] = sphere_create(&o1, world_data.sphere_1.named.radius);
 	spheres[1] = sphere_create(&o2, world_data.sphere_2.named.radius);
 
-	FLOAT_TYPE aspect_ratio = world_data.aspect_ratio;
-	FLOAT_TYPE viewport_height = world_data.viewport_height;
-    FLOAT_TYPE viewport_width = world_data.viewport_width;
-    FLOAT_TYPE focal_length = world_data.focal_length;
+	const int samples_per_pixel = 100;
+	camera_t cam = camera_create(world_data.aspect_ratio, world_data.focal_length);
 
-	point3_t origin = {{0, 0, 0}};
-	vec3_t horizontal = {{viewport_width, 0, 0}};
-	vec3_t vertical = {{0, viewport_height, 0}};
-
-	//auto lower_left_corner = origin - horizontal/2 - vertical/2 - vec3(0, 0, focal_length);
-	vec3_t half_horizontal = {{viewport_width/2, 0, 0}};
-	vec3_t half_vertical  = {{0, viewport_height/2, 0}};
-	vec3_t focal_offset = {{0, 0, focal_length}};
-	point3_t lower_left_corner;
-	vec3_minus(vec3_minus(vec3_minus(vec3_assignv(&lower_left_corner, origin.e), &half_horizontal), &half_vertical), &focal_offset);
-    
-
-	vec3_t horz_dir;
-	vec3_t vert_dir;
-	vec3_t target;
 	for(int j = world_data.start_y; j < world_data.end_y; ++j)
 	{
 		for(int i = world_data.start_x; i < world_data.end_x; ++i)
 		{
-			FLOAT_TYPE u = ((FLOAT_TYPE)i) / (world_data.img_width - 1);
-			FLOAT_TYPE v = ((FLOAT_TYPE)j) / (world_data.img_height - 1);
-
 			int width = (world_data.end_x - world_data.start_x);
 			int x = i - world_data.start_x;
 			int y = j - world_data.start_y;
 
-			vec3_mul(vec3_assignv(&horz_dir, horizontal.e), u);
-			vec3_mul(vec3_assignv(&vert_dir, vertical.e), v);
-			vec3_minus(vec3_add(vec3_add(vec3_assignv(&target, lower_left_corner.e), &horz_dir), &vert_dir), &origin);
+			color_t color = vec3_create(0, 0, 0);
+			for (int s = 0; s < samples_per_pixel; ++s) {
 
-			ray_t r;
-			ray_assign(&r, &origin, &target);
+				FLOAT_TYPE u = ((FLOAT_TYPE)i + random_float()) / (world_data.img_width - 1);
+				FLOAT_TYPE v = ((FLOAT_TYPE)j + random_float()) / (world_data.img_height - 1);
 
-            color_t color = ray_color(&r);
+                ray_t r = camera_get_ray(&cam, u, v);
+                color_t color_contrib = ray_color(&r);
+                vec3_add(&color, &color_contrib);
+            }
+
+            // average by samples
+            vec3_div(&color, (FLOAT_TYPE)samples_per_pixel);
 
 			pixel_data_t* pixel = &pixels_data[y * width  + x];
-
 			color_to_pixel_data(&color, pixel);
-			/*
-			color pixel_color;
-			ray r = cam.get_ray(u, v);
-			vec3 ray_dir = unit_vector(r.direction()); // because r.direction() is not normalized
-			auto t = 0.5 * (ray_dir.y() + 1.0); // t <- [0, 1]
-			pixel_color = (1.0 - t) * color(1.0, 1.0, 1.0) + t * color(0.5, 0.7, 1.0); // white blend with blue graident
-			*/
 		}
 	}
 

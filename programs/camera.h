@@ -3,6 +3,9 @@
 
 #include "vec3.h"
 #include "ray.h"
+#include "floattype.h"
+
+#ifdef _PPU_
 
 class camera
 {
@@ -34,5 +37,23 @@ public:
 	vec3 vertical;
 	vec3 lower_left_corner;
 };
+
+#endif
+
+#ifdef _SPU_
+
+typedef struct _camera_t 
+{
+	FLOAT_TYPE aspect_ratio;
+	point3_t origin;
+	vec3_t horizontal;
+	vec3_t vertical;
+	vec3_t lower_left_corner;
+} camera_t;
+
+extern camera_t camera_create(FLOAT_TYPE aspect_ratio, FLOAT_TYPE focal_length);
+extern ray_t camera_get_ray(const camera_t* cam, FLOAT_TYPE u, FLOAT_TYPE v);
+
+#endif
 
 #endif //_H_CAMERA_
