@@ -81,10 +81,12 @@ static color_t ray_color(const ray_t* r, int depth) {
     if (world_hit(r, 0.001f, INFINITY, &rec)) {
 
     	vec3_t random;
-    	vec3_random_in_unit_sphere(&random);
+    	//vec3_random_in_unit_sphere(&random);
+    	//vec3_random_unit_vector(&random);
+    	vec3_random_in_hemisphere(&random, &rec.normal);
 
     	point3_t target = vec3_duplicate(&rec.p);
-    	vec3_add(&target, &rec.normal);
+    	//vec3_add(&target, &rec.normal);
     	vec3_add(&target, &random);
 
     	ray_t secondary_ray;
@@ -140,8 +142,9 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 	spheres[0] = sphere_create(&o1, world_data.sphere_1.named.radius);
 	spheres[1] = sphere_create(&o2, world_data.sphere_2.named.radius);
 
-	const int samples_per_pixel = 100;
-	const int max_depth = 5;
+	const int samples_per_pixel = world_data.samples_per_pixel;
+	const int max_depth = world_data.max_bounce_depth;
+
 	camera_t cam = camera_create(world_data.aspect_ratio, world_data.focal_length);
 
 	for(int j = world_data.start_y; j < world_data.end_y; ++j)
@@ -166,9 +169,11 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
             // average by samples
             vec3_div(&color, (FLOAT_TYPE)samples_per_pixel);
             // approximate gamma correction
+#if 0
             color.e[0] = sqrtf(color.e[0]);
             color.e[1] = sqrtf(color.e[1]);
             color.e[2] = sqrtf(color.e[2]);
+#endif
 
 			pixel_data_t* pixel = &pixels_data[y * width  + x];
 			color_to_pixel_data(&color, pixel);

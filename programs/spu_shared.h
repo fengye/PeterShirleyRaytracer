@@ -47,7 +47,9 @@ typedef struct _world_data
 	float  				viewport_height; // 4
 	float  				focal_length; // 4
 	float  				aspect_ratio; // 4
-	uint32_t            padding[2]; // 8
+	int32_t  			samples_per_pixel; // 4
+	int32_t  			max_bounce_depth; // 4
+//	uint32_t            padding[2]; // 8
 } world_data_t;
 
 typedef struct _named_pixel_data

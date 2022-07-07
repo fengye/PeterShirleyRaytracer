@@ -175,6 +175,12 @@ sphere_data_t sphere_2{
 	0, -100.5, 0, 100.0f
 };
 
+// multisample
+#define SAMPLES_PER_PIXEL (100)
+// ray bounce
+#define MAX_BOUNCE_DEPTH (50)
+
+
 struct spu_job_t
 {
 	spu_shared_t* spu = nullptr;
@@ -197,6 +203,8 @@ struct spu_job_t
 		input->aspect_ratio = 16.0f / 9.0f;
 		input->viewport_height = 2.0f;
 		input->viewport_width = input->aspect_ratio * input->viewport_height;
+		input->samples_per_pixel = SAMPLES_PER_PIXEL;
+		input->max_bounce_depth = MAX_BOUNCE_DEPTH;
 
 		int pixelCount = (input->end_x - input->start_x) * (input->end_y - input->start_y);
 		output = (pixel_data_t*)memalign(SPU_ALIGN, pixelCount * sizeof(pixel_data_t));
@@ -316,10 +324,6 @@ int main()
 
 	// camera
 	camera cam;
-	// multisample
-	//const int sample_per_pixel = 100;
-	// ray bounce
-	//const int max_depth = 50;
 
 
 	// img
@@ -425,56 +429,69 @@ int main()
 
 		running = 1;
 		
-		for (size_t i = 0; i < s_spu_jobs.size(); i++)
+		debug_printf("Waiting for SPUs to return...\n");
+		bool spu_processed[SPU_COUNT];
+		for(size_t i = 0; i < SPU_COUNT; ++i)
 		{
-			debug_printf("Waiting for SPU %d to return...\n", i);
-			while (s_spu_jobs[i]->check_sync() == 0)
+			spu_processed[i] = false;
+		}
+
+		size_t spu_processed_count = 0;
+
+		while(true)
+		{
+			for (size_t n = 0; n < s_spu_jobs.size(); n++)
 			{
 				if (check_pad_input() || !running)
 					goto done;
 
-				usleep(2000);
-			}
-
-			// SPU work finished, print out result
-#if 0
-			pixel_data_t* output_pixels = spu_pixels[i];
-			int32_t output_pixels_count = spu_pixels_size[i] / sizeof(pixel_data_t);
-
-			for(int n = 0; n < output_pixels_count; ++n)
-			{
-				debug_printf("SPU %d Pixel %d: (%.3f, %.3f, %.3f, %.3f)\n", i, n,
-					output_pixels[n].rgba[0],
-					output_pixels[n].rgba[1],
-					output_pixels[n].rgba[2],
-					output_pixels[n].rgba[3]);
-			}
-#endif
-		}
-
-		for (size_t n = 0; n < s_spu_jobs.size(); n++)
-		{
-			debug_printf("\nDraw SPU %d result\n", n);
-			world_data_t* world = s_spu_jobs[n]->input;
-			pixel_data_t* output_pixels = s_spu_jobs[n]->output;
-			for(int j = world->start_y; j < world->end_y; ++j)
-			{
-				for(int i = world->start_x; i < world->end_x; ++i)
+				if (!spu_processed[n] && s_spu_jobs[n]->check_sync() == 1)
 				{
-					if (check_pad_input() || !running)
-						goto done;
+					spu_processed[n] = true;
+					// update bitmap
+					spu_processed_count++;
 
-					auto spu_y = j - world->start_y;
+					debug_printf("\nDraw SPU %d result\n", n);
+					world_data_t* world = s_spu_jobs[n]->input;
+					pixel_data_t* output_pixels = s_spu_jobs[n]->output;
+					for(int j = world->start_y; j < world->end_y; ++j)
+					{
+						for(int i = world->start_x; i < world->end_x; ++i)
+						{
+							auto spu_y = j - world->start_y;
 
-					//debug_printf("\rWrite pixel at col %d from spu_y: %d", i, spu_y);
-					pixel_data_t* pixel = &output_pixels[ spu_y * img_width + i];
-					write_pixel_bitmap(&bitmap, i, (img_height - (j+1)), pixel);
+							//debug_printf("\rWrite pixel at col %d from spu_y: %d", i, spu_y);
+							pixel_data_t* pixel = &output_pixels[ spu_y * img_width + i];
+							write_pixel_bitmap(&bitmap, i, (img_height - (j+1)), pixel);
+						}
+					}
+
+					// update screen for every spu job result
+					rsxClearScreenSetBlendState(CLEAR_COLOR);
+					blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);
+					flip();
 				}
+
+				usleep(1000);
+
+				// SPU work finished, print out result
+	#if 0
+				pixel_data_t* output_pixels = spu_pixels[i];
+				int32_t output_pixels_count = spu_pixels_size[i] / sizeof(pixel_data_t);
+
+				for(int n = 0; n < output_pixels_count; ++n)
+				{
+					debug_printf("SPU %d Pixel %d: (%.3f, %.3f, %.3f, %.3f)\n", i, n,
+						output_pixels[n].rgba[0],
+						output_pixels[n].rgba[1],
+						output_pixels[n].rgba[2],
+						output_pixels[n].rgba[3]);
+				}
+	#endif
 			}
-			// update screen for every spu job result
-			rsxClearScreenSetBlendState(CLEAR_COLOR);
-			blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);
-			flip();
+
+			if (spu_processed_count == s_spu_jobs.size())
+				break;
 		}
 
 		////////////////////////////
