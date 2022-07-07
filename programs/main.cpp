@@ -21,6 +21,7 @@
 #include "bitmap.h"
 #include "rsxutil.h"
 #include <sys/time.h>
+#include <assert.h>
 
 #define STOP_SPU_BY_TERMINATION 0
 
@@ -171,14 +172,6 @@ void rsxClearScreenSetBlendState(u32 clear_color)
 #define SPU_COUNT 6
 #define SPU_ALIGN 16
 
-// temp world data
-sphere_data_t sphere_1{
-			0, 0, -1, 0.5f
-};
-sphere_data_t sphere_2{
-	0, -100.5, 0, 100.0f
-};
-
 // multisample
 #define SAMPLES_PER_PIXEL (100)
 // ray bounce
@@ -192,13 +185,13 @@ struct spu_job_t
 	uint32_t output_size = 0;
 	uint32_t spu_index = 0;
 
-	spu_job_t(int32_t img_width, int32_t img_height, int32_t start_y, int32_t end_y, uint32_t spu_index_)
+	spu_job_t(int32_t img_width, int32_t img_height, int32_t start_y, int32_t end_y, uint32_t spu_index_, void* job_data, uint32_t job_data_size)
 	{
 		input = (world_data_t*)memalign(SPU_ALIGN, sizeof(world_data_t));
 		input->img_width = img_width;
 		input->img_height = img_height;
-		input->sphere_1 = sphere_1;
-		input->sphere_2 = sphere_2;
+		input->obj_data_ea = ptr2ea(job_data);
+		input->obj_data_sz = job_data_size;
 		input->start_x = 0;
 		input->end_x = img_width;
 		input->start_y = start_y;
@@ -330,9 +323,6 @@ int main()
 {
 	debug_init();
 
-	// SPU test
-	//spu_test();
-
 	// frame buffer
 	void *host_addr = memalign(CB_SIZE, HOST_SIZE);
 	init_screen(host_addr, HOST_SIZE);
@@ -351,6 +341,33 @@ int main()
 	// camera
 	camera cam;
 
+	// world
+	std::vector<std::shared_ptr<sphere>> sphere_world;
+	sphere_world.push_back(make_shared<sphere>(point3(0, 0, -1), 0.5));
+	sphere_world.push_back(make_shared<sphere>(point3(1, 0, -1), 0.25));
+	sphere_world.push_back(make_shared<sphere>(point3(-1, 0, -1), 0.25));
+	sphere_world.push_back(make_shared<sphere>(point3(0, 1, -1), 0.5));
+	sphere_world.push_back(make_shared<sphere>(point3(1, 1, -1), 0.25));
+	sphere_world.push_back(make_shared<sphere>(point3(-1, 1, -1), 0.25));
+	sphere_world.push_back(make_shared<sphere>(point3(0, -100.5, 0), 100.0));
+
+	// needs to be big enough to hold all data
+	const uint32_t blob_size = 1024;
+	uint8_t* obj_blob = (uint8_t*)memalign(SPU_ALIGN, blob_size); 
+	uint8_t element_size = 0;
+	uint32_t actual_blob_size = 0;
+
+	// serialise two spheres
+	for(const auto& sphere : sphere_world)
+	{
+		sphere->serialise(obj_blob + actual_blob_size, &element_size);
+		actual_blob_size += element_size;	
+	}
+
+	assert(actual_blob_size <= blob_size);
+	debug_printf("Sphere blob addr: %08x size: %d actual_size: %d count: %d\n", obj_blob, blob_size, actual_blob_size, actual_blob_size / element_size);
+
+
 
 	// img
 	const int img_width = 400;
@@ -368,13 +385,6 @@ int main()
 	rsxClearScreenSetBlendState(CLEAR_COLOR);
 	flip();
 
-
-	// world
-	/*
-	hittable_list world;
-	world.add(make_shared<sphere>(point3(0, 0, -1), 0.5));
-	world.add(make_shared<sphere>(point3(0, -100.5, 0), 100.0));
-	*/
 
 	/////////////////////////////
 	// FOR SPU DEVICES
@@ -432,7 +442,7 @@ int main()
 			}
 
 			s_spu_jobs.push_back(
-				std::make_shared<spu_job_t>(img_width, img_height, start_y, end_y, i));
+				std::make_shared<spu_job_t>(img_width, img_height, start_y, end_y, i, obj_blob, actual_blob_size));
 
 			if (job_enough)
 				break;
@@ -608,6 +618,8 @@ done:
 	spuRet = sysSpuImageClose(&image);
 	debug_printf("%08x\n", spuRet);
 
+	// free world
+	free(obj_blob);
 
 	rsxClearScreenSetBlendState(CLEAR_COLOR);
 	blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);

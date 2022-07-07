@@ -45,18 +45,15 @@ static void send_response(uint32_t code) {
 	mfc_putf(&spu.sync, ea, 4, TAG, 0, 0);
 }
 
-#define SPHERE_COUNT 2
-sphere_t spheres[SPHERE_COUNT];
-
-static bool world_hit(const ray_t* r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hitrecord_t* out_record)
+static bool world_hit(sphere_t** sphere_list, int32_t sphere_count, const ray_t* r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hitrecord_t* out_record)
 {
 	hitrecord_t tmp_record;
 	bool hit_anything = false;
 	FLOAT_TYPE closest_so_far = tmax;
 
-	for(int i = 0; i < SPHERE_COUNT; ++i)
+	for(int i = 0; i < sphere_count; ++i)
 	{
-		if (sphere_hit(&spheres[i], r, tmin, closest_so_far, &tmp_record))
+		if (sphere_hit(sphere_list[i], r, tmin, closest_so_far, &tmp_record))
 		{
 			hit_anything = true;
 			closest_so_far = tmp_record.t;
@@ -69,7 +66,7 @@ static bool world_hit(const ray_t* r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hitrecor
 
 
 // Material function
-static color_t ray_color(const ray_t* r, int depth) {
+static color_t ray_color(sphere_t** sphere_list, int32_t sphere_count, const ray_t* r, int depth) {
 
 	if (depth <= 0)
 	{
@@ -78,7 +75,7 @@ static color_t ray_color(const ray_t* r, int depth) {
 	}
 
 	hitrecord_t rec;
-    if (world_hit(r, 0.001f, INFINITY, &rec)) {
+    if (world_hit(sphere_list, sphere_count, r, 0.001f, INFINITY, &rec)) {
 
     	vec3_t random;
     	//vec3_random_in_unit_sphere(&random);
@@ -96,7 +93,7 @@ static color_t ray_color(const ray_t* r, int depth) {
     	ray_assign(&secondary_ray, &rec.p, &target_dir);
 
     	const FLOAT_TYPE reflection_rate = 0.5f;
-    	color_t secondary_ray_color = ray_color(&secondary_ray, depth-1);
+    	color_t secondary_ray_color = ray_color(sphere_list, sphere_count, &secondary_ray, depth-1);
     	vec3_mul(&secondary_ray_color, reflection_rate);
         return secondary_ray_color;
     }
@@ -133,24 +130,32 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 			mfc_get(&world_data, world_data_ea, sizeof(world_data_t), TAG, 0, 0);
 			wait_for_completion();
 
+			// get world actual obj data
+			uint8_t* obj_blob = memalign(SPU_ALIGN, world_data.obj_data_sz);
+			mfc_get(obj_blob, world_data.obj_data_ea, world_data.obj_data_sz, TAG, 0, 0);
+			wait_for_completion();
+
+			const int32_t sphere_type_size = sizeof(sphere_t);
+			const int32_t sphere_count = world_data.obj_data_sz / sphere_type_size;
+			
+
+			// sphere list
+			sphere_t** spheres = (sphere_t**)memalign(SPU_ALIGN, sizeof(sphere_t*) * sphere_count);
+			for(int i = 0; i < sphere_count; ++i)
+			{
+				sphere_t* sphere = (sphere_t*)memalign(SPU_ALIGN, sphere_type_size);
+				sphere_deserialise(sphere, obj_blob + i * sphere_type_size, sphere_type_size);
+
+				spheres[i] = sphere;
+			}
+
+			// all deserialised, no longer use the blob
+			free(obj_blob);
+
 			/* get pixel output pointer */
 			pixels_data_ea = spu.o_data_ea;
 			pixels_data_size = spu.o_data_sz;
 			pixels_data = (pixel_data_t*)memalign(SPU_ALIGN, pixels_data_size);
-
-			
-
-			point3_t o1 = vec3_create(
-					world_data.sphere_1.named.ox,
-					world_data.sphere_1.named.oy,
-					world_data.sphere_1.named.oz);
-			point3_t o2 = vec3_create(
-					world_data.sphere_2.named.ox,
-					world_data.sphere_2.named.oy,
-					world_data.sphere_2.named.oz);
-
-			spheres[0] = sphere_create(&o1, world_data.sphere_1.named.radius);
-			spheres[1] = sphere_create(&o2, world_data.sphere_2.named.radius);
 
 			const int samples_per_pixel = world_data.samples_per_pixel;
 			const int max_depth = world_data.max_bounce_depth;
@@ -172,7 +177,7 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 						FLOAT_TYPE v = ((FLOAT_TYPE)j + random_float()) / (world_data.img_height - 1);
 
 		                ray_t r = camera_get_ray(&cam, u, v);
-		                color_t color_contrib = ray_color(&r, max_depth);
+		                color_t color_contrib = ray_color(spheres, sphere_count, &r, max_depth);
 		                vec3_add(&color, &color_contrib);
 		            }
 
@@ -189,6 +194,15 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 					color_to_pixel_data(&color, pixel);
 				}
 			}
+
+			
+			// free up sphere and sphere list memory
+			for(int i = 0; i < sphere_count; ++i)
+			{
+				free(spheres[i]);
+			}
+
+			free(spheres);
 
 			/* write the result back */
 			int32_t bytes_left = pixels_data_size;

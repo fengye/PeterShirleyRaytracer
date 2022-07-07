@@ -42,8 +42,8 @@ typedef struct _world_data
 {
 	int32_t 			img_width; // 4
 	int32_t 			img_height; // 4
-	sphere_data_t		sphere_1; // 16
-	sphere_data_t		sphere_2; // 16
+	uint32_t            obj_data_ea; // 4
+	uint32_t            obj_data_sz; // 4
 	int32_t  			start_x; // 4
 	int32_t  			start_y; // 4
 	int32_t 			end_x; // 4
@@ -54,7 +54,7 @@ typedef struct _world_data
 	float  				aspect_ratio; // 4
 	int32_t  			samples_per_pixel; // 4
 	int32_t  			max_bounce_depth; // 4
-//	uint32_t            padding[2]; // 8
+	uint32_t            padding[2]; // 8
 } world_data_t;
 
 typedef struct _named_pixel_data

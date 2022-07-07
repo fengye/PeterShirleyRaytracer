@@ -38,3 +38,23 @@ bool sphere::hit(const ray& r, double tmin, double tmax, hit_record& record) con
 		return true;
 	}
 }
+
+void sphere::serialise(void* buf, uint8_t* out_size) const
+{
+	float* fbuf = (float*)buf;
+	fbuf[0] = (float)centre.e[0];
+	fbuf[1] = (float)centre.e[1];
+	fbuf[2] = (float)centre.e[2];
+	fbuf[3] = (float)radius;
+
+	*out_size = 4 * sizeof(float);
+}
+
+void sphere::deserialise(const void* buf, uint8_t size)
+{
+	const float* fbuf = (const float*)buf;
+	centre.e[0] = fbuf[0];
+	centre.e[1] = fbuf[1];
+	centre.e[2] = fbuf[2];
+	radius = fbuf[3];
+}
