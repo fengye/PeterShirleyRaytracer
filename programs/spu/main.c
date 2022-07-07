@@ -53,18 +53,18 @@ static FLOAT_TYPE hit_sphere(const point3_t* center, FLOAT_TYPE radius, const ra
     //auto a = dot(r.direction(), r.direction());
     FLOAT_TYPE a = vec3_dot(&r->dir, &r->dir);
     //auto b = 2.0 * dot(oc, r.direction());
-    FLOAT_TYPE b = 2.0f * vec3_dot(&oc, &r->dir);
+    FLOAT_TYPE half_b = vec3_dot(&oc, &r->dir);
     //auto c = dot(oc, oc) - radius*radius;
     FLOAT_TYPE c = vec3_dot(&oc, &oc) - radius*radius;
 
-    FLOAT_TYPE discriminant = b*b - 4*a*c;
+    FLOAT_TYPE discriminant = half_b*half_b - a*c;
     if (discriminant < 0)
     {
     	return -1.0f;
     }
     else
     {
-    	return (-b - sqrtf(discriminant)) / (2.0f*a);
+    	return (-half_b - sqrtf(discriminant)) / a;
     }
 }
 
