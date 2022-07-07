@@ -6,6 +6,11 @@
 #pragma pack(push)
 #pragma pack(1)
 
+#define SYNC_START (0)
+#define SYNC_FINISHED (1)
+#define SYNC_QUIT (2)
+#define SYNC_INVALID (0xFFFFFFFF)
+
 // It looks like all structure needs to be multiple of 32-bytes in size
 typedef struct _spu_shared
 {
