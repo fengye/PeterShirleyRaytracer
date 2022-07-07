@@ -12,7 +12,7 @@
 #include "vec3.h"
 #include "ray.h"
 #include "color_pixel_util.h"
-
+#include "sphere.h"
 
 #define nullptr NULL
 
@@ -44,49 +44,43 @@ static void send_response() {
 	mfc_putf(&spu.sync, ea, 4, TAG, 0, 0);
 }
 
-static FLOAT_TYPE hit_sphere(const point3_t* center, FLOAT_TYPE radius, const ray_t* r) 
-{
-	//vec3 oc = r.origin() - center;
-	vec3_t oc = vec3_duplicate(&r->orig);
-	vec3_minus(&oc, center);
-    
-    //auto a = dot(r.direction(), r.direction());
-    FLOAT_TYPE a = vec3_dot(&r->dir, &r->dir);
-    //auto b = 2.0 * dot(oc, r.direction());
-    FLOAT_TYPE half_b = vec3_dot(&oc, &r->dir);
-    //auto c = dot(oc, oc) - radius*radius;
-    FLOAT_TYPE c = vec3_dot(&oc, &oc) - radius*radius;
+#define SPHERE_COUNT 2
+sphere_t spheres[SPHERE_COUNT];
 
-    FLOAT_TYPE discriminant = half_b*half_b - a*c;
-    if (discriminant < 0)
-    {
-    	return -1.0f;
-    }
-    else
-    {
-    	return (-half_b - sqrtf(discriminant)) / a;
-    }
+static bool world_hit(const ray_t* r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hitrecord_t* out_record)
+{
+	hitrecord_t tmp_record;
+	bool hit_anything = false;
+	FLOAT_TYPE closest_so_far = tmax;
+
+	for(int i = 0; i < SPHERE_COUNT; ++i)
+	{
+		if (sphere_hit(&spheres[i], r, tmin, closest_so_far, &tmp_record))
+		{
+			hit_anything = true;
+			closest_so_far = tmp_record.t;
+			*out_record = tmp_record;
+		}
+	}
+	
+	return hit_anything;
 }
 
+
 static color_t ray_color(const ray_t* r) {
-	point3_t sphere_ori = {{0, 0, -1}};
-	FLOAT_TYPE sphere_rad = 0.5f;
-	FLOAT_TYPE t = hit_sphere(&sphere_ori, sphere_rad, r);
 
-	if (t > 0)
-	{
-		// vec3 N = vec3_unit_vector(r.at(t) - vec3(0,0,-1));
-		point3_t p = ray_at(r, t);
-		vec3_minus(&p, &sphere_ori);
+	hitrecord_t rec;
+    if (world_hit(r, 0, INFINITY, &rec)) {
 
-		vec3_t N = vec3_unit_vector(&p);
-		vec3_t one = vec3_create(1, 1, 1);
-		vec3_mul(vec3_add(&N, &one), 0.5f);
-        return N;
-	}
+    	color_t result = vec3_duplicate(&rec.normal);
+    	color_t white = {{1,1,1}};
+    	vec3_add(&result, &white);
+    	vec3_mul(&result, 0.5f);
+        return result;
+    }
 
     vec3_t unit_direction = vec3_unit_vector(&r->dir);
-    t = 0.5f * (vec3_y(&unit_direction) + 1.0f);
+    FLOAT_TYPE t = 0.5f * (vec3_y(&unit_direction) + 1.0f);
     
     color_t white = {{1.0f, 1.0f, 1.0f}};
     color_t blue = {{0.5f, 0.7f, 1.0f}};
@@ -127,6 +121,18 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 
 	camera cam;
 */
+	point3_t o1 = vec3_create(
+			world_data.sphere_1.named.ox,
+			world_data.sphere_1.named.oy,
+			world_data.sphere_1.named.oz);
+	point3_t o2 = vec3_create(
+			world_data.sphere_2.named.ox,
+			world_data.sphere_2.named.oy,
+			world_data.sphere_2.named.oz);
+
+	spheres[0] = sphere_create(&o1, world_data.sphere_1.named.radius);
+	spheres[1] = sphere_create(&o2, world_data.sphere_2.named.radius);
+
 	FLOAT_TYPE aspect_ratio = world_data.aspect_ratio;
 	FLOAT_TYPE viewport_height = world_data.viewport_height;
     FLOAT_TYPE viewport_width = world_data.viewport_width;

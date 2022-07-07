@@ -1,6 +1,8 @@
 #ifndef _H_HITTABLE_
 #define _H_HITTABLE_
 
+#ifdef _PPU_
+
 #include "vec3.h"
 #include "ray.h"
 
@@ -24,5 +26,28 @@ public:
 	virtual bool hit(const ray& r, double tmin, double tmax, hit_record& record) const = 0;
 	
 };
+
+#endif
+
+
+#ifdef _SPU_
+
+#include "floattype.h"
+#include "vec3.h"
+#include "ray.h"
+#include <stdbool.h>
+
+typedef struct _hitrecord_t
+{
+	point3_t p;
+	vec3_t normal;
+	FLOAT_TYPE t;
+	bool front_face;
+
+} hitrecord_t;
+
+extern void hitrecord_set_face_normal(hitrecord_t* record, const ray_t* r, const vec3_t* outward_normal);
+
+#endif
 
 #endif //_H_HITTABLE_
