@@ -68,16 +68,35 @@ static bool world_hit(const ray_t* r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hitrecor
 }
 
 
-static color_t ray_color(const ray_t* r) {
+// Material function
+static color_t ray_color(const ray_t* r, int depth) {
+
+	if (depth <= 0)
+	{
+        color_t black = {{0, 0, 0}};
+        return black;
+	}
 
 	hitrecord_t rec;
-    if (world_hit(r, 0, INFINITY, &rec)) {
+    if (world_hit(r, 0.001f, INFINITY, &rec)) {
 
-    	color_t result = vec3_duplicate(&rec.normal);
-    	color_t white = {{1,1,1}};
-    	vec3_add(&result, &white);
-    	vec3_mul(&result, 0.5f);
-        return result;
+    	vec3_t random;
+    	vec3_random_in_unit_sphere(&random);
+
+    	point3_t target = vec3_duplicate(&rec.p);
+    	vec3_add(&target, &rec.normal);
+    	vec3_add(&target, &random);
+
+    	ray_t secondary_ray;
+    	vec3_t target_dir = vec3_duplicate(&target);
+    	vec3_minus(&target_dir, &rec.p);
+
+    	ray_assign(&secondary_ray, &rec.p, &target_dir);
+
+    	const FLOAT_TYPE reflection_rate = 0.5f;
+    	color_t secondary_ray_color = ray_color(&secondary_ray, depth-1);
+    	vec3_mul(&secondary_ray_color, reflection_rate);
+        return secondary_ray_color;
     }
 
     vec3_t unit_direction = vec3_unit_vector(&r->dir);
@@ -122,6 +141,7 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 	spheres[1] = sphere_create(&o2, world_data.sphere_2.named.radius);
 
 	const int samples_per_pixel = 100;
+	const int max_depth = 5;
 	camera_t cam = camera_create(world_data.aspect_ratio, world_data.focal_length);
 
 	for(int j = world_data.start_y; j < world_data.end_y; ++j)
@@ -139,12 +159,16 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 				FLOAT_TYPE v = ((FLOAT_TYPE)j + random_float()) / (world_data.img_height - 1);
 
                 ray_t r = camera_get_ray(&cam, u, v);
-                color_t color_contrib = ray_color(&r);
+                color_t color_contrib = ray_color(&r, max_depth);
                 vec3_add(&color, &color_contrib);
             }
 
             // average by samples
             vec3_div(&color, (FLOAT_TYPE)samples_per_pixel);
+            // approximate gamma correction
+            color.e[0] = sqrtf(color.e[0]);
+            color.e[1] = sqrtf(color.e[1]);
+            color.e[2] = sqrtf(color.e[2]);
 
 			pixel_data_t* pixel = &pixels_data[y * width  + x];
 			color_to_pixel_data(&color, pixel);

@@ -317,9 +317,9 @@ int main()
 	// camera
 	camera cam;
 	// multisample
-	const int sample_per_pixel = 100;
+	//const int sample_per_pixel = 100;
 	// ray bounce
-	const int max_depth = 50;
+	//const int max_depth = 50;
 
 
 	// img
@@ -493,6 +493,7 @@ int main()
 
 	// Actually this code starts from the top of the image, as the coordinate of the image is Y pointing upwards,
 	// then j = img_height-1 means the top row of the image
+	/*
 	for(int j = img_height-1; j >= 0; --j)
 	{
 		debug_printf("\rScanline remaining: %d ", j);
@@ -521,6 +522,7 @@ int main()
 			flip();
 		}
 	}
+	*/
 
 done:
 	////////////////////////////
