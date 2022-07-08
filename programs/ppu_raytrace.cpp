@@ -19,7 +19,8 @@ static color ray_color(const ray& r, const hittable& world, int depth)
 	hit_record record;
 	if (world.hit(r, 0.01f, RT_infinity, record))
 	{
-		vec3 target = record.p + record.normal + vec3::random_in_hemisphere(record.normal);
+		//vec3 target = record.p + record.normal + vec3::random_in_unit_sphere();
+		vec3 target = record.p + vec3::random_in_hemisphere(record.normal);
 		return 0.5 * ray_color(ray(record.p, target-record.p), world, depth-1);
 	}
 
@@ -62,17 +63,18 @@ void ppu_raytrace(void* arg)
 			const int max_depth = world_data->max_bounce_depth;
 
 			uint8_t* obj_blob = ea2ptr(world_data->obj_data_ea);
-			const int32_t sphere_count = world_data->obj_data_sz / sizeof(sphere_data_t);
-			uint8_t size = sizeof(sphere_data_t);
+			uint8_t sphere_size = sizeof(FLOAT_TYPE) * 4;
+			const int32_t sphere_count = world_data->obj_data_sz / sphere_size;
+			
 
 //			debug_printf("%s sphere data %08x\n", threadname, obj_blob);
-//			debug_printf("%s sphere count %d sphere type size: %d\n", threadname, sphere_count, sizeof(sphere_data_t));
+//			debug_printf("%s sphere count %d sphere type size: %d\n", threadname, sphere_count, sphere_size);
 			hittable_list world;
 			for(int i = 0; i < sphere_count; ++i)
 			{
 				auto sph = std::make_shared<sphere>();
 				
-				sph->deserialise(obj_blob + i * sizeof(sphere_data_t), size);
+				sph->deserialise(obj_blob + i * sphere_size, sphere_size);
 				world.add(sph);
 			}
 
@@ -91,8 +93,8 @@ void ppu_raytrace(void* arg)
 
 					for (int s = 0; s < samples_per_pixel; ++s) 
 					{
-						FLOAT_TYPE u = ((FLOAT_TYPE)i + random_float()) / (world_data->img_width - 1);
-						FLOAT_TYPE v = ((FLOAT_TYPE)j + random_float()) / (world_data->img_height - 1);
+						FLOAT_TYPE u = ((FLOAT_TYPE)i + random_double()) / (world_data->img_width - 1);
+						FLOAT_TYPE v = ((FLOAT_TYPE)j + random_double()) / (world_data->img_height - 1);
 
 						pixel_color += ray_color(cam.get_ray(u, v), world, max_depth);
 		            }

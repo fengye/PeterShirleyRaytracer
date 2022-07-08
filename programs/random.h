@@ -3,7 +3,8 @@
 
 #include <stdlib.h>
 
-#ifdef _PPU_
+#if defined(_SPU_) || defined(_PPU_)
+
 inline double random_double()
 {
     // [0, 1)
@@ -15,9 +16,6 @@ inline double random_double_range(double min, double max)
     // [min, max)
     return min + (max - min) * random_double();
 }
-#endif
-
-#if defined(_SPU_) || defined(_PPU_)
 
 inline float random_float()
 {

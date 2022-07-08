@@ -41,18 +41,18 @@ bool sphere::hit(const ray& r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hit_record& rec
 
 void sphere::serialise(void* buf, uint8_t* out_size) const
 {
-	float* fbuf = (float*)buf;
-	fbuf[0] = (float)centre.e[0];
-	fbuf[1] = (float)centre.e[1];
-	fbuf[2] = (float)centre.e[2];
-	fbuf[3] = (float)radius;
+	FLOAT_TYPE* fbuf = (FLOAT_TYPE*)buf;
+	fbuf[0] = (FLOAT_TYPE)centre.e[0];
+	fbuf[1] = (FLOAT_TYPE)centre.e[1];
+	fbuf[2] = (FLOAT_TYPE)centre.e[2];
+	fbuf[3] = (FLOAT_TYPE)radius;
 
-	*out_size = 4 * sizeof(float);
+	*out_size = 4 * sizeof(FLOAT_TYPE);
 }
 
 void sphere::deserialise(const void* buf, uint8_t size)
 {
-	const float* fbuf = (const float*)buf;
+	const FLOAT_TYPE* fbuf = (const FLOAT_TYPE*)buf;
 	centre.e[0] = fbuf[0];
 	centre.e[1] = fbuf[1];
 	centre.e[2] = fbuf[2];

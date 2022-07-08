@@ -74,7 +74,7 @@ static color_t ray_color(sphere_t** sphere_list, int32_t sphere_count, const ray
 	}
 
 	hitrecord_t rec;
-    if (world_hit(sphere_list, sphere_count, r, 0.001f, INFINITY, &rec)) {
+    if (world_hit(sphere_list, sphere_count, r, 0.01f, INFINITY, &rec)) {
 
     	vec3_t random;
     	//vec3_random_in_unit_sphere(&random);
@@ -172,8 +172,8 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 					color_t color = vec3_create(0, 0, 0);
 					for (int s = 0; s < samples_per_pixel; ++s) {
 
-						FLOAT_TYPE u = ((FLOAT_TYPE)i + random_float()) / (world_data.img_width - 1);
-						FLOAT_TYPE v = ((FLOAT_TYPE)j + random_float()) / (world_data.img_height - 1);
+						FLOAT_TYPE u = ((FLOAT_TYPE)i + random_double()) / (world_data.img_width - 1);
+						FLOAT_TYPE v = ((FLOAT_TYPE)j + random_double()) / (world_data.img_height - 1);
 
 		                ray_t r = camera_get_ray(&cam, u, v);
 		                color_t color_contrib = ray_color(spheres, sphere_count, &r, max_depth);

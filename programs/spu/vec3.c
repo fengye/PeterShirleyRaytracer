@@ -152,16 +152,16 @@ FLOAT_TYPE vec3_length(const vec3_t* v)
 
 vec3_t* vec3_random(vec3_t* v)
 {
-	v->e[0] = random_float();
-	v->e[1] = random_float();
-	v->e[2] = random_float();
+	v->e[0] = random_double();
+	v->e[1] = random_double();
+	v->e[2] = random_double();
 	return v;
 }
 vec3_t* vec3_random_range(vec3_t* v, FLOAT_TYPE min, FLOAT_TYPE max)
 {
-	v->e[0] = random_float_range(min, max);
-	v->e[1] = random_float_range(min, max);
-	v->e[2] = random_float_range(min, max);
+	v->e[0] = random_double_range(min, max);
+	v->e[1] = random_double_range(min, max);
+	v->e[2] = random_double_range(min, max);
 	return v;
 }
 vec3_t* vec3_random_in_unit_sphere(vec3_t* v)

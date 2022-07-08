@@ -30,20 +30,6 @@ typedef struct _spu_shared
 	uint32_t o_data_sz;
 } spu_shared_t;
 
-typedef struct _named_sphere_data
-{
-	float ox;
-	float oy;
-	float oz;
-	float radius;
-} named_sphere_data;
-
-typedef union _sphere_data
-{
-	named_sphere_data named;
-	float data[4];
-} sphere_data_t;
-
 typedef struct _world_data
 {
 	int32_t 			img_width; // 4

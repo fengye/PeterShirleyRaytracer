@@ -90,12 +90,12 @@ public:
 
 	static vec3 random()
 	{
-		return vec3(random_float(), random_float(), random_float());
+		return vec3(random_double(), random_double(), random_double());
 	}
 
 	static vec3 random(FLOAT_TYPE min, FLOAT_TYPE max)
 	{
-		return vec3(random_float_range(min, max), random_float_range(min, max), random_float_range(min, max));
+		return vec3(random_double_range(min, max), random_double_range(min, max), random_double_range(min, max));
 	}
 
 	static vec3 random_in_unit_sphere()
