@@ -1,19 +1,21 @@
-#ifndef _H_SPU_JOB_
-#define _H_SPU_JOB_
+#ifndef _H_PPU_JOB_
+#define _H_PPU_JOB_
 
 #include <stdint.h>
+#include <malloc.h>
+#include "config.h"
 #include "debug.h"
 #include "spu_shared.h"
 #include "job.h"
 
-struct spu_job_t : public job_t
+struct ppu_job_t : public job_t
 {
 	world_data_t* input = nullptr;
 	pixel_data_t* output = nullptr;
 	uint32_t output_size = 0;
-	uint32_t spu_index = 0;
+	uint32_t ppu_index = 0;
 
-	spu_job_t(int32_t img_width, int32_t img_height, int32_t start_y, int32_t end_y, uint32_t spu_index_, void* job_data, uint32_t job_data_size)
+	ppu_job_t(int32_t img_width, int32_t img_height, int32_t start_y, int32_t end_y, uint32_t ppu_index_, void* job_data, uint32_t job_data_size)
 	{
 		input = (world_data_t*)memalign(SPU_ALIGN, sizeof(world_data_t));
 		input->img_width = img_width;
@@ -35,15 +37,15 @@ struct spu_job_t : public job_t
 		output = (pixel_data_t*)memalign(SPU_ALIGN, pixelCount * sizeof(pixel_data_t));
 		output_size = pixelCount * sizeof(pixel_data_t);
 
-		spu_index = spu_index_;
+		ppu_index = ppu_index_;
 	}
 
 	virtual void print_job_details() const override
 	{
-		debug_printf("Input for SPU %d: %d->%d, %d->%d\n"
-					"Output for SPU %d: %08x sizeof %d\n",
-					spu_index, input->start_x, input->end_x, input->start_y, input->end_y,
-					spu_index, output, output_size);
+		debug_printf("Input for PPU %d: %d->%d, %d->%d\n"
+					"Output for PPU %d: %08x sizeof %d\n",
+					ppu_index, input->start_x, input->end_x, input->start_y, input->end_y,
+					ppu_index, output, output_size);
 	}
 
 	virtual world_data_t* get_input() override {
@@ -54,14 +56,14 @@ struct spu_job_t : public job_t
 	}
 
 	virtual int8_t get_processor_index() const override {
-		return (int8_t)spu_index;
+		return (int8_t)ppu_index + SPU_COUNT;
 	}
 
-	~spu_job_t()
+	~ppu_job_t()
 	{
 		free(output);
 		free(input);
 	}
 };
 
-#endif //_H_SPU_JOB_
+#endif //_H_PPU_JOB_

@@ -8,7 +8,8 @@
 
 #include <cmath>
 #include <iostream>
-
+#include "spu_shared.h"
+#include "ppu_math_helper.h"
 
 using std::sqrt;
 
@@ -61,7 +62,10 @@ public:
 
 	vec3& operator/=(const FLOAT_TYPE t)
 	{
-		return (*this) *= 1/t;
+		e[0] /= t;
+		e[1] /= t;
+		e[2] /= t;
+		return *this;
 	}
 
 	FLOAT_TYPE length_squared() const
@@ -74,14 +78,24 @@ public:
 		return sqrt(length_squared());
 	}
 
+	pixel_data_t* to_pixel_data(pixel_data_t* pixel_data) const
+	{
+		pixel_data->rgba[0] = clamp<uint8_t>((uint8_t)(e[0] * 255.999), 0, 0xff);
+		pixel_data->rgba[1] = clamp<uint8_t>((uint8_t)(e[1] * 255.999), 0, 0xff);
+		pixel_data->rgba[2] = clamp<uint8_t>((uint8_t)(e[2] * 255.999), 0, 0xff);
+		pixel_data->rgba[3] = 0xff;
+
+		return pixel_data;
+	}
+
 	static vec3 random()
 	{
-		return vec3(random_double(), random_double(), random_double());
+		return vec3(random_float(), random_float(), random_float());
 	}
 
 	static vec3 random(FLOAT_TYPE min, FLOAT_TYPE max)
 	{
-		return vec3(random_double_range(min, max), random_double_range(min, max), random_double_range(min, max));
+		return vec3(random_float_range(min, max), random_float_range(min, max), random_float_range(min, max));
 	}
 
 	static vec3 random_in_unit_sphere()

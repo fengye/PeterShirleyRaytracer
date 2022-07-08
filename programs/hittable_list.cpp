@@ -1,6 +1,6 @@
 #include "hittable_list.h"
 
-bool hittable_list::hit(const ray& r, double tmin, double tmax, hit_record& record) const
+bool hittable_list::hit(const ray& r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hit_record& record) const
 {
 	hit_record tmp_record;
 	bool hit_anything = false;

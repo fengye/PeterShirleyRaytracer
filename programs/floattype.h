@@ -2,7 +2,7 @@
 #define _H_FLOATTYPE_
 
 #ifdef _PPU_
-typedef double FLOAT_TYPE;
+typedef float FLOAT_TYPE;
 #endif
 
 #ifdef _SPU_

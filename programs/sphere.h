@@ -12,17 +12,17 @@ public:
 	sphere() : centre(0, 0, 0), radius(0)
 	{}
 
-	sphere(const point3& c, double r) : centre(c.x(), c.y(), c.z()), radius(r)
+	sphere(const point3& c, FLOAT_TYPE r) : centre(c.x(), c.y(), c.z()), radius(r)
 	{}
 
-	virtual bool hit(const ray& r, double tmin, double tmax, hit_record& record) const override;
+	virtual bool hit(const ray& r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hit_record& record) const override;
 
 	virtual void serialise(void* buf, uint8_t* out_size) const override;
 	virtual void deserialise(const void* buf, uint8_t size) override;
 
 public:
 	point3 centre;
-	double radius;
+	FLOAT_TYPE radius;
 };
 
 #endif

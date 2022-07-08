@@ -3,6 +3,7 @@
 
 #include "spu_shared.h"
 #include "spu_job.h"
+#include "job.h"
 
 struct spu_device_t
 {
@@ -21,15 +22,15 @@ struct spu_device_t
 		spu->o_data_sz = 0;
 	}
 
-	void update_job(spu_job_t* spu_job)
+	void update_job(job_t* spu_job)
 	{
-		world_data_t* input = spu_job->input;
-		pixel_data_t* output = spu_job->output;
+		world_data_t* input = spu_job->get_input();
+		pixel_data_t* output = spu_job->get_output();
 
 		spu->i_data_ea = ptr2ea(input);
 		spu->i_data_sz = sizeof(world_data_t);
 		spu->o_data_ea = ptr2ea(output);
-		spu->o_data_sz = spu_job->output_size;
+		spu->o_data_sz = ((spu_job_t*)spu_job)->output_size;
 	}
 
 	uint32_t pre_kickoff(sysSpuImage* image, sysSpuThreadAttribute* attr, uint32_t group_id)

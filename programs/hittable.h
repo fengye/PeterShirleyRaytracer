@@ -5,12 +5,13 @@
 
 #include "vec3.h"
 #include "ray.h"
+#include "floattype.h"
 
 struct hit_record
 {
 	point3 p;
 	vec3 normal;
-	double t;
+	FLOAT_TYPE t;
 	bool front_face;
 
 	inline void set_face_normal(const ray& r, const vec3& outward_normal)
@@ -23,7 +24,7 @@ struct hit_record
 class hittable
 {
 public:
-	virtual bool hit(const ray& r, double tmin, double tmax, hit_record& record) const = 0;
+	virtual bool hit(const ray& r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hit_record& record) const = 0;
 	
 };
 

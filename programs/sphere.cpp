@@ -1,6 +1,6 @@
 #include "sphere.h"
 
-bool sphere::hit(const ray& r, double tmin, double tmax, hit_record& record) const
+bool sphere::hit(const ray& r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hit_record& record) const
 {
 	// To find t of the ray = A + tb
 	auto b = r.direction();

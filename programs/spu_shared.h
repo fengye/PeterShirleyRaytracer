@@ -1,15 +1,16 @@
 #ifndef _H_SPU_SHARED_
 #define _H_SPU_SHARED_
 
+#include "config.h"
 #include "floattype.h"
 #include <stdint.h>
 #pragma pack(push)
 #pragma pack(1)
 
-#define SPU_COUNT (6)
 #define SPU_ALIGN (16)
 
-#define ptr2ea(x) ((u64)(void *)(x))
+#define ptr2ea(x) ((uint64_t)(void *)(x))
+#define ea2ptr(x) ((uint8_t*)((uint64_t)x))
 
 #define SYNC_START (0)
 #define SYNC_FINISHED (1)

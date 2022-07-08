@@ -4,6 +4,7 @@
 #include <vector>
 #include <memory>
 #include "hittable.h"
+#include "floattype.h"
 
 using std::shared_ptr;
 
@@ -33,7 +34,7 @@ public:
 		objects.clear();
 	}
 
-	virtual bool hit(const ray& r, double tmin, double tmax, hit_record& record) const override;
+	virtual bool hit(const ray& r, FLOAT_TYPE tmin, FLOAT_TYPE tmax, hit_record& record) const override;
 
 
 public:
