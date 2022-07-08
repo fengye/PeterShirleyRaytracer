@@ -17,7 +17,6 @@
 
 #define nullptr NULL
 
-#define SPU_ALIGN (16)
 #define DMA_TRANSFER_LIMIT (16384)
 
 /* The effective address of the input structure */

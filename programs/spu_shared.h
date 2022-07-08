@@ -6,6 +6,11 @@
 #pragma pack(push)
 #pragma pack(1)
 
+#define SPU_COUNT (6)
+#define SPU_ALIGN (16)
+
+#define ptr2ea(x) ((u64)(void *)(x))
+
 #define SYNC_START (0)
 #define SYNC_FINISHED (1)
 #define SYNC_QUIT (2)

@@ -1,6 +1,7 @@
 #include "debug.h"
 
 #include "raytracer.h"
+#include "config.h"
 #include "color.h"
 #include "ray.h"
 #include "vec3.h"
@@ -20,8 +21,16 @@
 // ~PS3 specific
 #include "bitmap.h"
 #include "rsxutil.h"
+#include "blit.h"
 #include <sys/time.h>
 #include <assert.h>
+// SPU specific
+#include <sys/spu.h>
+#include "spu_bin.h"
+#include "spu_job.h"
+#include "spu_device.h"
+#include "spu_shared.h"
+// ~SPU specific
 
 #define STOP_SPU_BY_TERMINATION 0
 
@@ -94,206 +103,9 @@ static void sysutil_exit_callback(u64 status,u64 param,void *usrdata)
 	}
 }
 
-void blit_simple(Bitmap *bitmap, u32 dstX, u32 dstY, u32 srcX, u32 srcY, u32 w, u32 h)
-{
-  rsxSetTransferImage(context, GCM_TRANSFER_LOCAL_TO_LOCAL,
-    color_offset[curr_fb], color_pitch, dstX, dstY,
-    bitmap->offset, bitmap->width*4, rsxGetFixedUint16((float)srcX),
-    rsxGetFixedUint16((float)srcY), w, h, 4);
-}
-
-void blit_to(Bitmap *bitmap, u32 dstX, u32 dstY, u32 dstW, u32 dstH, u32 srcX, u32 srcY, u32 srcW, u32 srcH)
-{
-	gcmTransferScale scale;
-	gcmTransferSurface surface;
-
-	scale.conversion = GCM_TRANSFER_CONVERSION_TRUNCATE;
-	scale.format = GCM_TRANSFER_SCALE_FORMAT_A8R8G8B8;
-	scale.origin = GCM_TRANSFER_ORIGIN_CORNER;
-	scale.operation = GCM_TRANSFER_OPERATION_SRCCOPY_AND;
-	scale.interp = GCM_TRANSFER_INTERPOLATOR_NEAREST;
-	scale.clipX = 0;
-	scale.clipY = 0;
-	scale.clipW = display_width;
-	scale.clipH = display_height;
-	scale.outX = dstX;
-	scale.outY = dstY;
-	scale.outW = dstW;
-	scale.outH = dstH;
-
-	scale.ratioX = rsxGetFixedSint32((float)srcW / dstW);
-	scale.ratioY = rsxGetFixedSint32((float)srcH / dstH);
-
-	scale.inX = rsxGetFixedUint16(srcX);
-	scale.inY = rsxGetFixedUint16(srcY);
-	scale.inW = bitmap->width;
-	scale.inH = bitmap->height;
-	scale.offset = bitmap->offset;
-	scale.pitch = sizeof(u32) * bitmap->width;
-
-	surface.format = GCM_TRANSFER_SURFACE_FORMAT_A8R8G8B8;
-	surface.pitch = color_pitch;
-	surface.offset = color_offset[curr_fb];
-
-	rsxSetTransferScaleMode(context, GCM_TRANSFER_LOCAL_TO_LOCAL, GCM_TRANSFER_SURFACE);
-	rsxSetTransferScaleSurface(context, &scale, &surface);
-}
-
-void rsxClearScreenSetBlendState(u32 clear_color)
-{
-	rsxSetClearColor(context, clear_color);
-    rsxSetClearDepthStencil(context, 0xffff);
-    rsxClearSurface(context,GCM_CLEAR_R |
-                                    GCM_CLEAR_G |
-                                    GCM_CLEAR_B |
-                                    GCM_CLEAR_A |
-                                    GCM_CLEAR_S |
-                                    GCM_CLEAR_Z);
-
-    /* Enable blending (for rsxSetTransferScaleSurface) */
-    rsxSetBlendFunc(context, GCM_SRC_ALPHA, GCM_ONE_MINUS_SRC_ALPHA, GCM_SRC_ALPHA, GCM_ONE_MINUS_SRC_ALPHA);
-    rsxSetBlendEquation(context, GCM_FUNC_ADD, GCM_FUNC_ADD);
-    rsxSetBlendEnable(context, GCM_TRUE);
-
-}
-
-// SPU TEST
-#include <sys/spu.h>
-
-#include "spu_bin.h"
-
-#include "spu_shared.h"
-
-#define ptr2ea(x) ((u64)(void *)(x))
 
 // Hijack printf
 #define printf debug_printf
-
-#define SPU_COUNT 6
-#define SPU_ALIGN 16
-
-// multisample
-#define SAMPLES_PER_PIXEL (100)
-// ray bounce
-#define MAX_BOUNCE_DEPTH (50)
-
-
-struct spu_job_t
-{
-	world_data_t* input = nullptr;
-	pixel_data_t* output = nullptr;
-	uint32_t output_size = 0;
-	uint32_t spu_index = 0;
-
-	spu_job_t(int32_t img_width, int32_t img_height, int32_t start_y, int32_t end_y, uint32_t spu_index_, void* job_data, uint32_t job_data_size)
-	{
-		input = (world_data_t*)memalign(SPU_ALIGN, sizeof(world_data_t));
-		input->img_width = img_width;
-		input->img_height = img_height;
-		input->obj_data_ea = ptr2ea(job_data);
-		input->obj_data_sz = job_data_size;
-		input->start_x = 0;
-		input->end_x = img_width;
-		input->start_y = start_y;
-		input->end_y = end_y;
-		input->focal_length = 1.0f;
-		input->aspect_ratio = 16.0f / 9.0f;
-		input->viewport_height = 2.0f;
-		input->viewport_width = input->aspect_ratio * input->viewport_height;
-		input->samples_per_pixel = SAMPLES_PER_PIXEL;
-		input->max_bounce_depth = MAX_BOUNCE_DEPTH;
-
-		int pixelCount = (input->end_x - input->start_x) * (input->end_y - input->start_y);
-		output = (pixel_data_t*)memalign(SPU_ALIGN, pixelCount * sizeof(pixel_data_t));
-		output_size = pixelCount * sizeof(pixel_data_t);
-
-		spu_index = spu_index_;
-	}
-
-	void print_spu_job() const
-	{
-		debug_printf("Input for SPU %d: %d->%d, %d->%d\n"
-					"Output for SPU %d: %08x sizeof %d\n",
-					spu_index, input->start_x, input->end_x, input->start_y, input->end_y,
-					spu_index, output, output_size);
-	}
-
-	~spu_job_t()
-	{
-		free(output);
-		free(input);
-	}
-};
-
-struct spu_device_t
-{
-	spu_shared_t* spu = nullptr;
-
-	spu_device_t(uint32_t spu_index)
-	{
-		spu = (spu_shared_t*)memalign(SPU_ALIGN, sizeof(spu_shared_t));
-		spu->rank = spu_index;
-		spu->count = SPU_COUNT;
-		spu->sync = SYNC_INVALID;
-		// uninitialised job data
-		spu->i_data_ea = 0;
-		spu->i_data_sz = 0;
-		spu->o_data_ea = 0;
-		spu->o_data_sz = 0;
-	}
-
-	void update_job(spu_job_t* spu_job)
-	{
-		world_data_t* input = spu_job->input;
-		pixel_data_t* output = spu_job->output;
-
-		spu->i_data_ea = ptr2ea(input);
-		spu->i_data_sz = sizeof(world_data_t);
-		spu->o_data_ea = ptr2ea(output);
-		spu->o_data_sz = spu_job->output_size;
-	}
-
-	uint32_t pre_kickoff(sysSpuImage* image, sysSpuThreadAttribute* attr, uint32_t group_id)
-	{
-		uint32_t spuRet = 0;
-		sysSpuThreadArgument arg;
-		arg.arg0 = ptr2ea(spu);
-
-		debug_printf("Creating SPU thread... ");
-		spuRet = sysSpuThreadInitialize(&spu->id, group_id, spu->rank, image, attr, &arg);
-		debug_printf("%08x\n", spuRet);
-		debug_printf("thread id = %d\n", spu->id);
-
-		debug_printf("Configuring SPU... ");
-		spuRet = sysSpuThreadSetConfiguration(spu->id, SPU_SIGNAL1_OVERWRITE|SPU_SIGNAL2_OVERWRITE);
-		debug_printf("%08x\n", spuRet);
-
-		return spuRet;
-	}
-
-	uint32_t signal_start()
-	{
-		spu->sync = SYNC_START;
-		return sysSpuThreadWriteSignal(spu->id, 0, 1);
-	}
-
-	uint32_t signal_quit()
-	{
-		spu->sync = SYNC_QUIT;
-		return sysSpuThreadWriteSignal(spu->id, 0, 1);
-	}
-
-	uint32_t check_sync() const
-	{
-		return spu->sync;
-	}
-
-	~spu_device_t()
-	{
-		free(spu);
-	}
-};
-
 
 static std::vector<std::shared_ptr<spu_job_t>> s_spu_jobs;
 static std::vector<std::shared_ptr<spu_device_t>> s_spu_devices;
@@ -346,7 +158,8 @@ int main()
 	sphere_world.push_back(make_shared<sphere>(point3(0, 0, -1), 0.5));
 	sphere_world.push_back(make_shared<sphere>(point3(1, 0, -1), 0.25));
 	sphere_world.push_back(make_shared<sphere>(point3(-1, 0, -1), 0.25));
-	sphere_world.push_back(make_shared<sphere>(point3(0, 1, -1), 0.5));
+	sphere_world.push_back(make_shared<sphere>(point3(0, 1, -1), 0.25));
+	sphere_world.push_back(make_shared<sphere>(point3(0, 1.5, -1), 0.25));
 	sphere_world.push_back(make_shared<sphere>(point3(1, 1, -1), 0.25));
 	sphere_world.push_back(make_shared<sphere>(point3(-1, 1, -1), 0.25));
 	sphere_world.push_back(make_shared<sphere>(point3(0, -100.5, 0), 100.0));
