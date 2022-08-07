@@ -13,6 +13,8 @@
 #include <unistd.h>
 #include <cfloat>
 #include <vector>
+#include <cstring>
+#include "network.h"
 // PS3 specific
 #include <io/pad.h>
 #include <rsx/rsx.h>
@@ -34,11 +36,18 @@
 #include "ppu_device.h"
 #include "ppu_job.h"
 
+#include "master.h"
+#include "slave.h"
+
+#define WAIT_INPUT_WHEN_FINISH 1
 #define STOP_SPU_BY_TERMINATION 0
+#define SINGLE_NODE_MODE 0
+#define SLAVE_ON_MASTER 1
 
 SYS_PROCESS_PARAM(1001, 0x100000);
 
-static u32 running = 0;
+u32 g_running = 0;
+bool g_master_mode;
 
 extern "C" {
 
@@ -53,7 +62,7 @@ static void sysutil_exit_callback(u64 status,u64 param,void *usrdata)
 {
 	switch(status) {
 		case SYSUTIL_EXIT_GAME:
-			running = 0;
+			g_running = 0;
 			break;
 		case SYSUTIL_DRAW_BEGIN:
 		case SYSUTIL_DRAW_END:
@@ -67,17 +76,17 @@ static void sysutil_exit_callback(u64 status,u64 param,void *usrdata)
 // Hijack printf
 #define printf debug_printf
 
+#if SINGLE_NODE_MODE
 static std::vector<std::shared_ptr<job_t>> s_all_jobs;
 static std::vector<std::shared_ptr<spu_device_t>> s_spu_devices;
 static std::vector<std::shared_ptr<ppu_device_t>> s_ppu_devices;
+#endif
 
 bool check_pad_input()
 {
 	padInfo padinfo;
 	padData paddata;
 
-
-	sysUtilCheckCallback();
 	ioPadGetInfo(&padinfo);
 	for(int p=0; p < MAX_PADS; p++)
 	{
@@ -92,17 +101,153 @@ bool check_pad_input()
 	return false;
 }
 
-int main()
+#if SLAVE_ON_MASTER
+
+node_sync_t g_slave_on_master_sync;
+
+static void slave_on_master_func(void* args)
+{
+	// wait until the master listening server says yes
+	if (node_sync_wait(&g_slave_on_master_sync, 0))
+	{
+
+		slave_main((const char*)args);
+	}
+
+	sysThreadExit(0);
+}
+#endif
+
+int main(int argc, char** argv)
 {
 	debug_init();
-
-	// frame buffer
-	void *host_addr = memalign(CB_SIZE, HOST_SIZE);
-	init_screen(host_addr, HOST_SIZE);
 
 	// handle program exit
 	atexit(program_exit_callback);
 	sysUtilRegisterCallback(0,sysutil_exit_callback,NULL);
+
+	debug_printf("Args count: %d\n", argc);
+
+	const char* master_addr = NULL;
+	char self_addr[256] = {0};
+	get_primary_ip(self_addr, 256);
+	debug_printf("Current node IP address: %s\n", self_addr);
+	
+
+	g_master_mode = true;
+	if (argc < 3)
+	{
+		master_addr = self_addr;
+		debug_printf("Master node at: %s\n", master_addr);
+		g_master_mode = true;
+	}
+	else
+	{
+		for(int i = 2; i < argc; ++i)
+		{
+			debug_printf("Arg %d: %s\n", i, argv[i]);
+
+			if (strncmp(argv[i], "--master", 8) == 0 ||
+				strncmp(argv[i], "-m", 2) == 0)
+			{
+				// master node
+				master_addr = self_addr;
+				debug_printf("Master node at: %s\n", master_addr);
+				g_master_mode = true;
+			}
+			else 
+			if (strncmp(argv[i], "--slave", 7) == 0)
+			{
+				// slave node
+				if (argv[i][7] == '=')
+				{
+					master_addr = argv[i] + 8;
+					debug_printf("Slave node connecting to: %s\n", master_addr);
+					g_master_mode = false;
+				}
+				else
+				{
+					debug_printf("Missing master IP address. Quit...\n");
+					debug_return_ps3loadx();
+					return -1;
+				}
+			}
+			else
+			if (strncmp(argv[i], "-s", 2) == 0)
+			{
+				// slave node
+				if (argv[i][2] == '=')
+				{
+					master_addr = argv[i] + 3;
+					debug_printf("Slave node connecting to: %s\n", master_addr);
+					g_master_mode = false;
+				}
+				else 
+				{
+					debug_printf("Missing master IP address. Quit...\n");
+					debug_return_ps3loadx();
+					return -1;
+				}
+
+			}
+			else
+			{
+				// unknown option, quit
+				debug_printf("FATAL: unknown parameter: %s. Quit...\n", argv[i]);
+				debug_return_ps3loadx();
+				return -1;
+			}
+		}
+	}
+
+#if !SINGLE_NODE_MODE
+	if (g_master_mode)
+	{
+		node_sync_init(&g_slave_on_master_sync);
+		
+#if SLAVE_ON_MASTER
+		sys_ppu_thread_t slave_tid = -1;
+		char thread_name[] = "slave_on_master_func";
+        if (sysThreadCreate(&slave_tid, slave_on_master_func, (void*)master_addr, 1200, 0x4000, THREAD_JOINABLE, thread_name) < 0)
+        {
+            debug_printf("Error creating master slave hybrid thread. Only master node will be running.\n");
+        }
+#endif
+
+		master_main();
+		node_sync_destroy(&g_slave_on_master_sync);
+
+#if SLAVE_ON_MASTER
+		// join slave hybrid
+		if (slave_tid >= 0)
+		{
+			u64 retval;
+			sysThreadJoin(slave_tid, &retval);
+		}
+#endif
+
+#if WAIT_INPUT_WHEN_FINISH
+	while(!check_pad_input())
+	{
+		sysUtilCheckCallback();
+		usleep(32000);
+	}
+
+	debug_printf("Exited program after button press.\n");
+#endif
+
+
+	}
+	else
+	{
+		slave_main(master_addr);
+	}
+
+#else
+	// frame buffer
+	void *host_addr = memalign(CB_SIZE, HOST_SIZE);
+	init_screen(host_addr, HOST_SIZE);
+
 
 	// input
 	ioPadInit(7);
@@ -295,7 +440,7 @@ int main()
 			
 		}
 
-		running = 1;
+		g_running = 1;
 		
 		debug_printf("%d scanelines are left\n", leftover_scanline);
 		debug_printf("Waiting for SPUs and PPUs to return...\n");
@@ -311,7 +456,7 @@ int main()
 		{
 			for (size_t n = 0; n < s_all_jobs.size(); n++)
 			{
-				if (check_pad_input() || !running)
+				if (check_pad_input() || !g_running)
 				{
 					force_terminate_spu = true;
 					goto done;
@@ -472,11 +617,14 @@ done:
 	debug_printf("Time used: %dms\n", end_millisecond - start_millisecond);
 	debug_printf("Ray per second: %.2f\n", float(img_width * img_height * SAMPLES_PER_PIXEL) / (end_millisecond - start_millisecond));
 
+#if WAIT_INPUT_WHEN_FINISH
 	while(!check_pad_input())
 		usleep(32000);
+#endif
 	
 	debug_printf("Exiting...\n");
 	bitmapDestroy(&bitmap);
+#endif
 	debug_return_ps3loadx();
 	return 0;
 }

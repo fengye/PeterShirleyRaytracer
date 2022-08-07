@@ -2,6 +2,7 @@
 #define _H_SPU_JOB_
 
 #include <stdint.h>
+#include <malloc.h>
 #include "debug.h"
 #include "spu_shared.h"
 #include "job.h"

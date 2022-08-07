@@ -1,3 +1,6 @@
+#ifndef _H_PPU_DEVICE_
+#define _H_PPU_DEVICE_
+
 #include "spu_shared.h"
 #include "job.h"
 #include "ppu_job.h"
@@ -80,3 +83,5 @@ struct ppu_device_t
 		sysMutexDestroy(mutex);
 	}
 };
+
+#endif //_H_PPU_DEVICE_

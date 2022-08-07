@@ -2,6 +2,7 @@
 #include "debug.h"
 #include "string.h"
 #include "random.h"
+#include <stdbool.h>
 
 #ifdef _SPU_
 
@@ -168,7 +169,7 @@ vec3_t* vec3_random_in_unit_sphere(vec3_t* v)
 {
 	// First, pick a random point in the unit cube where x, y, and z all range from −1 to +1. 
 	// Reject this point and try again if the point is outside the sphere.
-	while(1)
+	while(true)
 	{
 		if (vec3_length_squared(vec3_random_range(v, -1.0f, 1.0f)) > 1.0)
 			continue;

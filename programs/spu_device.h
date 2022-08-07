@@ -1,6 +1,7 @@
 #ifndef _H_SPU_DEVICE_
 #define _H_SPU_DEVICE_
 
+#include <sys/spu.h>
 #include "spu_shared.h"
 #include "spu_job.h"
 #include "job.h"

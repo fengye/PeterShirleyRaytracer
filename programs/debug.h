@@ -3,7 +3,7 @@
 
 
 // This IP range should cover your home network
-#define DEBUG_IP_MASK "192.168.0.255"
+#define DEBUG_IP_MASK "192.168.20.255"
 #define DEBUG_PORT 18194
 
 extern void debug_printf(const char* fmt, ...);
