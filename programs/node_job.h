@@ -24,4 +24,8 @@ extern bool allocate_node_job(uint8_t ppu_count, uint8_t spu_count, uint32_t* jo
 extern bool get_node_job(uint32_t job_id, node_job_t* job);
 extern bool dismiss_node_job(uint32_t job_id);
 
+extern void complete_curr_frame();
+extern bool is_rendering_curr_frame();
+extern void advance_next_frame();
+extern int32_t get_curr_frame();
 #endif //_H_NODE_JOB_

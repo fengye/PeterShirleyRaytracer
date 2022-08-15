@@ -82,10 +82,14 @@ static std::vector<std::shared_ptr<spu_device_t>> s_spu_devices;
 static std::vector<std::shared_ptr<ppu_device_t>> s_ppu_devices;
 #endif
 
+
+static padData s_lastPadData[MAX_PADS];
 bool check_pad_input()
 {
 	padInfo padinfo;
 	padData paddata;
+
+	bool pressed = false;
 
 	ioPadGetInfo(&padinfo);
 	for(int p=0; p < MAX_PADS; p++)
@@ -93,17 +97,24 @@ bool check_pad_input()
 		if(padinfo.status[p])
 		{
 			ioPadGetData(p, &paddata);
-			if(paddata.BTN_CROSS)
-				return true;
+			
+			if(paddata.BTN_CROSS && !s_lastPadData[p].BTN_CROSS)
+				pressed = true;
+
+			s_lastPadData[p] = paddata;
 		}
+
+		if (pressed)
+			break;
 	}
 
-	return false;
+	return pressed;
 }
 
 #if SLAVE_ON_MASTER
 
 node_sync_t g_slave_on_master_sync;
+bool g_is_slave_on_master = false;
 
 static void slave_on_master_func(void* args)
 {
@@ -118,6 +129,8 @@ static void slave_on_master_func(void* args)
 }
 #endif
 
+char g_self_addr[256] = {0};
+
 int main(int argc, char** argv)
 {
 	debug_init();
@@ -129,15 +142,14 @@ int main(int argc, char** argv)
 	debug_printf("Args count: %d\n", argc);
 
 	const char* master_addr = NULL;
-	char self_addr[256] = {0};
-	get_primary_ip(self_addr, 256);
-	debug_printf("Current node IP address: %s\n", self_addr);
+	get_primary_ip(g_self_addr, 256);
+	debug_printf("Current node IP address: %s\n", g_self_addr);
 	
 
 	g_master_mode = true;
 	if (argc < 3)
 	{
-		master_addr = self_addr;
+		master_addr = g_self_addr;
 		debug_printf("Master node at: %s\n", master_addr);
 		g_master_mode = true;
 	}
@@ -151,7 +163,7 @@ int main(int argc, char** argv)
 				strncmp(argv[i], "-m", 2) == 0)
 			{
 				// master node
-				master_addr = self_addr;
+				master_addr = g_self_addr;
 				debug_printf("Master node at: %s\n", master_addr);
 				g_master_mode = true;
 			}
@@ -206,12 +218,14 @@ int main(int argc, char** argv)
 		node_sync_init(&g_slave_on_master_sync);
 		
 #if SLAVE_ON_MASTER
+		g_is_slave_on_master = true;
 		sys_ppu_thread_t slave_tid = -1;
 		char thread_name[] = "slave_on_master_func";
         if (sysThreadCreate(&slave_tid, slave_on_master_func, (void*)master_addr, 1200, 0x4000, THREAD_JOINABLE, thread_name) < 0)
         {
             debug_printf("Error creating master slave hybrid thread. Only master node will be running.\n");
         }
+
 #endif
 
 		master_main();
@@ -225,17 +239,6 @@ int main(int argc, char** argv)
 			sysThreadJoin(slave_tid, &retval);
 		}
 #endif
-
-#if WAIT_INPUT_WHEN_FINISH
-	while(!check_pad_input())
-	{
-		sysUtilCheckCallback();
-		usleep(32000);
-	}
-
-	debug_printf("Exited program after button press.\n");
-#endif
-
 
 	}
 	else
@@ -619,6 +622,9 @@ done:
 
 #if WAIT_INPUT_WHEN_FINISH
 	while(!check_pad_input())
+		sysUtilCheckCallback();
+		blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, img_width, img_height);
+		flip();
 		usleep(32000);
 #endif
 	

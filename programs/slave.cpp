@@ -28,6 +28,7 @@
 
 extern "C" bool check_pad_input();
 extern u32 g_running;
+extern bool g_is_slave_on_master;
 
 static std::vector<std::shared_ptr<spu_device_t>> s_spu_devices;
 static std::vector<std::shared_ptr<ppu_device_t>> s_ppu_devices;
@@ -144,6 +145,7 @@ static void slave_work(void* obj_blob, size_t actual_blob_size, int img_width, i
 	uint8_t *pixel_data = (uint8_t*)malloc(pixel_data_size);
 
 	bool quit_work = false;
+	bool allowCheckInput = !g_is_slave_on_master;
 
 	while(leftover_scanline > 0 && !quit_work)
 	{
@@ -251,12 +253,14 @@ static void slave_work(void* obj_blob, size_t actual_blob_size, int img_width, i
 			{
 				sysUtilCheckCallback();
 
-				if (check_pad_input() || !g_running)
+				if ((allowCheckInput && check_pad_input()) || !g_running )
 				{
+					debug_printf("Detected slave button press or system exit. Force quit!\n");
 					s_force_terminate_spu = true;
 					quit_work = true;
 					break;
 				}
+				
 
 				auto& job = s_all_jobs[n];
 				auto processor_index = job->get_processor_index();
@@ -317,13 +321,15 @@ static void slave_work(void* obj_blob, size_t actual_blob_size, int img_width, i
 	*out_pixel_data_size = pixel_data_size;
 }
 
+extern char g_self_addr[256];
+
 // This process should directly corresponding to node_serv_func() in network module
 void slave_main(const char* master_addr)
 {
 	int conn_fd;
 	g_running = 1;
 
-	debug_printf("Connecting to master: %s ... ", master_addr);
+	debug_printf("Connecting to master: %s from %s... ", master_addr, g_self_addr);
 	if (connect_master(master_addr, &conn_fd))
 	{
 		debug_printf("Done!\n");
@@ -341,7 +347,7 @@ void slave_main(const char* master_addr)
 		while(g_running)
 		{
 			bool is_shutdown;
-			debug_printf("Receiving shutdown/nop request ... ");
+			debug_printf("Receiving shutdown/nop request from %d ... \n", conn_fd);
 			if (!recv_shutdown_request(conn_fd, &is_shutdown))
 			{
 				debug_printf("Error!\n");
@@ -349,65 +355,82 @@ void slave_main(const char* master_addr)
 			}
 			else
 			{
-				debug_printf("Receiving shutdown/nop request done.\n");
+				debug_printf("Receiving shutdown/nop from %d request done.\n", conn_fd);
 			}
 
 			if (is_shutdown)
 			{
-				debug_printf("Received shutdown request. Quitting.\n");
+				debug_printf("Received SHUTDOWN request. Quitting.\n");
 				break;
 			}
 
 			// send offer
-			debug_printf("Sending offer (%d, %d) ... ", ppu_count, spu_count);
+			debug_printf("Sending offer (%d, %d) ... to %d\n", ppu_count, spu_count, conn_fd);
 			if (!send_processor_offer(conn_fd, ppu_count, spu_count))
 			{
 				debug_printf("Error!\n");
 				break;
 			}
 			else{
-				debug_printf("Sending offer (%d, %d) done.\n", ppu_count, spu_count);
+				debug_printf("Sending offer (%d, %d) to %d done.\n", ppu_count, spu_count, conn_fd);
 			}
 
-			// receive job request
-			uint32_t job_id;
-			uint8_t* world_data;
-			size_t world_data_size;
-			int img_width, img_height;
-			int start_y, end_y;
-			debug_printf("Receiving job request ... ");
-			if (!recv_job_request(conn_fd, &job_id, &world_data, &world_data_size, &img_width, &img_height, &start_y, &end_y))
+			int32_t job_count;
+			debug_printf("Receiving job count from %d ...\n", conn_fd);
+			if (!recv_job_count(conn_fd, &job_count))
 			{
 				debug_printf("Error!\n");
 				break;
 			}
+
+			if (job_count > 0)
+			{
+				debug_printf("Job count valid from %d\n", conn_fd);
+
+				// receive job request
+				uint32_t job_id;
+				uint8_t* world_data;
+				size_t world_data_size;
+				int img_width, img_height;
+				int start_y, end_y;
+				debug_printf("Receiving job request from %d ... \n", conn_fd);
+				if (!recv_job_request(conn_fd, &job_id, &world_data, &world_data_size, &img_width, &img_height, &start_y, &end_y))
+				{
+					debug_printf("Error!\n");
+					break;
+				}
+				else
+				{
+					debug_printf("Receiving job request from %d done.\n", conn_fd);
+				}
+
+				// do the work
+				uint8_t* pixel_data;
+				size_t pixel_data_size;
+				debug_printf("Doing raytrace work on %s... \n", g_self_addr);
+				slave_work(world_data, world_data_size, img_width, img_height, start_y, end_y, &pixel_data, &pixel_data_size);
+				// caller to free the world data
+				free(world_data);
+				debug_printf("Raytrace work on %s done.\n", g_self_addr);
+
+				// send the result back to master
+				debug_printf("Sending job(%d) result %p(%lld) to %d... ", job_id, pixel_data, pixel_data_size, conn_fd);
+				if (!send_job_result(conn_fd, job_id, pixel_data, pixel_data_size))
+				{
+					debug_printf("Error!\n");
+					free(pixel_data);
+					break;
+				}
+				else
+				{
+					debug_printf("Sending job(%d) result %p(%lld) to %d done!\n", job_id, pixel_data, pixel_data_size, conn_fd);
+					free(pixel_data);
+					debug_printf("Freed pixel data\n");
+				}
+			}
 			else
 			{
-				debug_printf("Receiving job request done.\n");
-			}
-
-			// do the work
-			uint8_t* pixel_data;
-			size_t pixel_data_size;
-			debug_printf("Doing raytrace work ... ");
-			slave_work(world_data, world_data_size, img_width, img_height, start_y, end_y, &pixel_data, &pixel_data_size);
-			// caller to free the world data
-			free(world_data);
-			debug_printf("Raytrace work done.\n");
-
-			// send the result back to master
-			debug_printf("Sending job(%d) result %p(%lld) ... ", job_id, pixel_data, pixel_data_size);
-			if (!send_job_result(conn_fd, job_id, pixel_data, pixel_data_size))
-			{
-				debug_printf("Error!\n");
-				free(pixel_data);
-				break;
-			}
-			else
-			{
-				debug_printf("Sending job(%d) result %p(%lld) done!\n", job_id, pixel_data, pixel_data_size);
-				free(pixel_data);
-				debug_printf("Freed pixel data\n");
+				debug_printf("No job count for this frame from %d\n", conn_fd);
 			}
 
 

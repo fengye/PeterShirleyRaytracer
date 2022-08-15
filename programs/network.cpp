@@ -56,26 +56,35 @@ typedef struct _node_params_t
     sys_ppu_thread_t tid; // thread id
     int socket_fd; // socket file descriptor
     char ip_addr[24]; // ip address for debugging
+    node_sync_t kickoff_cond_var;
 } node_params_t;
 
-static std::vector<node_params_t> s_slave_nodes;
+static std::vector<node_params_t*> s_slave_nodes;
 std::map<uint32_t, node_result_t> g_node_results;
 node_sync_t g_node_sync;
+extern bool g_master_quit;
 
 // This should read as an opposite to slave_main()
 static void node_serv_func(void* args)
 {
-    node_params_t param = *((node_params_t*)args);
+    node_params_t* param = (node_params_t*)args;
+
+    debug_printf("Node serv socket(START): %d -> %s\n", param->socket_fd, param->ip_addr);
 
     // fill in the thread id
-    sysThreadGetId(&param.tid);
+    sysThreadGetId(&param->tid);
+
+    // wait for kicking off
+    node_sync_wait(&param->kickoff_cond_var, 0);
 
     while(true)
     {
+        debug_printf("Node serv socket(LOOP): %d -> %s\n", param->socket_fd, param->ip_addr);
+
         // tell slave to shutdown or keep running
-        bool is_shutdown = !require_more_node_jobs();
+        bool is_shutdown = g_master_quit; //!require_more_node_jobs();
         debug_printf("Sending %s request\n", is_shutdown ? "SHUTDOWN" : "NOP");
-        if (!send_shutdown_request(param.socket_fd, is_shutdown))
+        if (!send_shutdown_request(param->socket_fd, is_shutdown))
             continue;
 
         if (is_shutdown)
@@ -83,10 +92,10 @@ static void node_serv_func(void* args)
 
         // read slave's offer
         uint8_t ppu_count, spu_count;
-        debug_printf("Receiving offer from %d\n", param.socket_fd);
-        if (!recv_processor_offer(param.socket_fd, &ppu_count, &spu_count))
+        debug_printf("Receiving offer from %d\n", param->socket_fd);
+        if (!recv_processor_offer(param->socket_fd, &ppu_count, &spu_count))
         {
-            debug_printf("Error receiving slave's offer from socket %d\n", param.socket_fd);
+            debug_printf("Error receiving slave's offer from socket %d\n", param->socket_fd);
             continue;
         }
 
@@ -98,58 +107,73 @@ static void node_serv_func(void* args)
         size_t serialized_data_size;
         int img_width, img_height;
         int start_y, end_y;
-        debug_printf("Allocating job ... ");
+        int32_t job_count;
+        debug_printf("Allocating job for %d...\n", param->socket_fd);
         if (!allocate_node_job(ppu_count, spu_count, &job_id, &serialized_data, &serialized_data_size, &img_width, &img_height, &start_y, &end_y))
         {
-            debug_printf("No more jobs needed!\n");
-            // no more jobs to be done, quit node serv proc
-            break;
+            debug_printf("No more jobs for current frame!\n");
+            // no more jobs to be done, start over node serv proc
+            job_count = 0;
         }
         else{
-            debug_printf("Allocating job(%d) done\n", job_id);
-
+            debug_printf("Allocating job(%d) for %d done\n", job_id, param->socket_fd);
+            job_count = ppu_count + spu_count;
         }
 
-        debug_printf("Job id %d. Scanline Y from %d - %d\n", job_id, start_y, end_y);
-
-        // send job request
-        debug_printf("Sending job(%d) request\n", job_id);
-        if (!send_job_request(param.socket_fd, job_id, serialized_data, serialized_data_size, img_width, img_height, start_y, end_y))
+        if (!send_job_count(param->socket_fd, job_count))
         {
-            free(serialized_data);
-            debug_printf("Error sending job to slave %d\n", param.socket_fd);
+            debug_printf("Error sending job count to %d\n", param->socket_fd);
+            break;
+        }
+
+        if (job_count > 0)
+        {
+            // If job is valid, wait for result
+            debug_printf("Job id %d. Scanline Y from %d - %d\n", job_id, start_y, end_y);
+
+            // send job request
+            debug_printf("Sending job(%d) request to %d\n", job_id, param->socket_fd);
+            if (!send_job_request(param->socket_fd, job_id, serialized_data, serialized_data_size, img_width, img_height, start_y, end_y))
+            {
+                free(serialized_data);
+                debug_printf("Error sending job to slave %d\n", param->socket_fd);
+                continue;
+            }
+            else
+            {
+                debug_printf("Sending job(%d) request to %d done\n", job_id, param->socket_fd);
+                free(serialized_data);    
+            }
+
+            sysThreadYield();
+
+            // wait for the result from slave
+            node_result_t result;
+            uint32_t job_id_returned;
+            debug_printf("Receiving job(%d) result from %d...\n", job_id, param->socket_fd);
+            if (recv_job_result(param->socket_fd, &job_id_returned, (uint8_t**)(&result.pixel_data), &result.pixel_data_size) && job_id == job_id_returned)
+            {
+                debug_printf("Receiving job(%d) result: %p(%lld) from %d done!\n", job_id, result.pixel_data, result.pixel_data_size, param->socket_fd);
+                debug_printf("Notifying update thread.\n");
+
+                // signal conditional variable
+                sysMutexLock(g_node_sync.mutex, 0);
+                g_node_results.insert(std::make_pair(job_id, result));
+                // put the data into storage before signaling
+                sysCondSignal(g_node_sync.cond_var);
+                sysMutexUnlock(g_node_sync.mutex);
+            }
+            else
+            {
+                debug_printf("Error!\n");
+            }
+        }
+        else
+        {
+            // If no job needed for this frame, continue loop
+
+            sysThreadYield();
             continue;
-        }
-        else
-        {
-            debug_printf("Sending job(%d) request done\n", job_id);
-            free(serialized_data);    
-        }
-
-        // wait for the result from slave
-        node_result_t result;
-        uint32_t job_id_returned;
-        debug_printf("Receiving job(%d) result ...\n", job_id);
-        if (recv_job_result(param.socket_fd, &job_id_returned, (uint8_t**)(&result.pixel_data), &result.pixel_data_size) && job_id == job_id_returned)
-        {
-            debug_printf("Receiving job(%d) result: %p(%lld) done!\n", job_id, result.pixel_data, result.pixel_data_size);
-
-            sysMutexLock(g_node_sync.util_mutex, 0);
-            g_node_results.insert(std::make_pair(job_id, result));
-            sysMutexUnlock(g_node_sync.util_mutex);
-
-
-            debug_printf("Notifying update thread.\n");
-
-            // signal conditional variable
-            sysMutexLock(g_node_sync.mutex, 0);
-            // put the data into storage before signaling
-            sysCondSignal(g_node_sync.cond_var);
-            sysMutexUnlock(g_node_sync.mutex);
-        }
-        else
-        {
-            debug_printf("Error!\n");
         }
     }
 
@@ -187,21 +211,25 @@ static void listening_serv_func(void* args)
         debug_printf("Accepted incoming socket %d\n", conn_fd);
 
         // store slave's connection file descriptor
-        node_params_t node_param;
+        node_params_t* node_param = (node_params_t*)malloc(sizeof(node_params_t));
         // find out slave's ip in human readable format
         struct sockaddr_in name;
         socklen_t namelen = sizeof(name);
-        if (getsockname(conn_fd, (struct sockaddr*) &name, &namelen) < 0)
+        if (getpeername(conn_fd, (struct sockaddr*) &name, &namelen) < 0)
         {
             debug_printf("Error getting the name of socket %d\n", conn_fd);
             continue;
         }
-        if (!inet_ntop(AF_INET, &name.sin_addr, node_param.ip_addr, 24))
+        if (!inet_ntop(AF_INET, &name.sin_addr, node_param->ip_addr, 24))
         {
             debug_printf("Error converting ip address of socket %d\n", conn_fd);
             continue;
         }
-        node_param.socket_fd = conn_fd;
+        debug_printf("Accepted from IP: %s\n", node_param->ip_addr);
+        node_param->socket_fd = conn_fd;
+        // init kickoff cond var
+        node_sync_init(&node_param->kickoff_cond_var);
+
         s_slave_nodes.push_back(node_param);
         
 
@@ -211,7 +239,7 @@ static void listening_serv_func(void* args)
         snprintf(thread_name, strlen(thread_name), "node_serv_%d", ++thread_count);
 
         sys_ppu_thread_t node_serv_tid;
-        if (sysThreadCreate(&node_serv_tid, node_serv_func, &node_param, 1000, 0x4000, THREAD_JOINABLE, thread_name) < 0)
+        if (sysThreadCreate(&node_serv_tid, node_serv_func, node_param, 1000, 0x4000, THREAD_JOINABLE, thread_name) < 0)
         {
             debug_printf("Error creating node thread for slave %d\n", conn_fd);
             continue;
@@ -220,15 +248,29 @@ static void listening_serv_func(void* args)
 
     // Join all the slave node connection threads
     debug_printf("Joining all slave node connection threads.\n");
-    for(auto& node : s_slave_nodes)
+    for(auto* node : s_slave_nodes)
     {
         u64 retval;
-        sysThreadJoin(node.tid, &retval);
+        sysThreadJoin(node->tid, &retval);
+        // destroy kickoff cond var
+        node_sync_destroy(&node->kickoff_cond_var);
+
+        // remember to delete allocated node params
+        free(node);
     }
     s_slave_nodes.clear();
     debug_printf("Joining slave node connection threads done.\n");
 
     sysThreadExit(0);
+}
+
+void kickoff_all_nodes()
+{
+    // FIXME: protect s_slave_nodes!
+    for(auto& node : s_slave_nodes)
+    {
+        node_sync_signal(&node->kickoff_cond_var);
+    }
 }
 
 bool start_listening_server()
@@ -294,16 +336,10 @@ void node_sync_init(node_sync_t* node_sync)
     sys_cond_attr cond_attr;
     sysCondAttrInitialize(cond_attr);
     sysCondCreate(&node_sync->cond_var, node_sync->mutex, &cond_attr);
-
-    // a util mutex for sync whatever external object for convenience
-    sys_mutex_attr_t mutex_attr2;
-    sysMutexAttrInitialize(mutex_attr2);
-    sysMutexCreate(&node_sync->util_mutex, &mutex_attr2);
 }
 
 void node_sync_destroy(node_sync_t* node_sync)
 {
-    sysMutexDestroy(node_sync->util_mutex);
     sysCondDestroy(node_sync->cond_var);
     sysMutexDestroy(node_sync->mutex);
 }
@@ -407,6 +443,37 @@ typedef struct _job_result_packet_t
     uint32_t job_id;
     size_t serialized_data_size;
 } job_result_packet_t;
+
+bool send_job_count(int conn_fd, int32_t count)
+{
+    uint8_t code = NC_JOBCOUNT;
+    if (send_request_header(conn_fd, code))
+    {
+        int32_t cnt = count;
+        if (send(conn_fd, &cnt, sizeof(cnt), 0) == sizeof(cnt))
+        {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+bool recv_job_count(int conn_fd, int32_t* out_count)
+{
+    uint8_t code = NC_JOBCOUNT;
+    if (recv_request_header(conn_fd, &code) && code == NC_JOBCOUNT)
+    {
+        int32_t count;
+        if (recv(conn_fd, &count, sizeof(count), 0) == sizeof(count))
+        {
+            *out_count = count;
+            return true;
+        }
+    }
+
+    return false;
+}
 
 bool send_job_request(int conn_fd, uint32_t job_id, uint8_t* serialized_data, size_t data_size, int img_width, int img_height, int start_y, int end_y)
 {

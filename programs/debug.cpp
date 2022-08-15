@@ -14,6 +14,8 @@
 static int SocketFD;
 static struct sockaddr_in stSockAddr;
 
+extern char g_self_addr[256];
+
 void debug_printf(const char* fmt, ...)
 {
 #ifdef _PPU_
@@ -23,7 +25,10 @@ void debug_printf(const char* fmt, ...)
   vsnprintf(buffer, sizeof(buffer), fmt, arg);
   va_end(arg);
 
-  netSendTo(SocketFD,buffer, strlen(buffer), 0, (struct sockaddr *)&stSockAddr, sizeof(stSockAddr));
+  char buffer2[0x900];
+  snprintf(buffer2, sizeof(buffer2), "[%s] %s", g_self_addr, buffer);
+
+  netSendTo(SocketFD, buffer2, strlen(buffer2), 0, (struct sockaddr *)&stSockAddr, sizeof(stSockAddr));
 #endif
 }
 void debug_init()

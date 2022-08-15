@@ -15,6 +15,8 @@
 static std::map<uint32_t, node_job_t> s_job_record;
 static uint32_t s_job_counter = 0;
 static int32_t s_leftover_scanlines;
+static int32_t s_curr_frame = -1;
+static int32_t s_target_frame = 0;
 static int s_img_width, s_img_height;
 
 static sys_mutex_t s_job_mutex;
@@ -25,6 +27,8 @@ void init_node_jobs(int img_width, int img_height)
 	s_img_height = img_height;
 
 	s_leftover_scanlines = img_height;
+	s_curr_frame = -1;
+	s_target_frame = 0;
 
 	sys_mutex_attr_t mutex_attr;
 	sysMutexAttrInitialize(mutex_attr);
@@ -51,7 +55,9 @@ bool allocate_node_job(uint8_t ppu_count, uint8_t spu_count, uint32_t* job_id, u
 	}
 
 	std::vector<std::shared_ptr<sphere>> sphere_world;
-	sphere_world.push_back(std::make_shared<sphere>(point3(0, 0, -1), 0.5));
+	// procedural animation based on frame index
+	float animate_height = sinf((float)s_target_frame * 10.0f * 0.0174533f) * 0.5f;
+	sphere_world.push_back(std::make_shared<sphere>(point3(0, animate_height, -1), 0.5));
 	sphere_world.push_back(std::make_shared<sphere>(point3(0, -100.5, 0), 100.0));
 
 	const uint32_t blob_size = 1024;
@@ -130,4 +136,26 @@ bool dismiss_node_job(uint32_t job_id)
 	bool succeeded = s_job_record.erase(job_id) > 0;
 
 	return succeeded;
+}
+
+void complete_curr_frame()
+{
+	s_curr_frame++;
+}
+
+int32_t get_curr_frame()
+{
+	return s_curr_frame;
+}
+
+bool is_rendering_curr_frame()
+{
+	return s_curr_frame < s_target_frame;
+}
+
+void advance_next_frame()
+{
+	scoped_mutex lock(s_job_mutex);
+	s_leftover_scanlines = s_img_height;
+	s_target_frame++;
 }

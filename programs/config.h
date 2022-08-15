@@ -5,8 +5,8 @@
 #define PPU_COUNT (6)
 #define SPU_PPU_COUNT (12)
 
-#define SPU_CAP (10)
-#define PPU_CAP (10)
+#define SPU_CAP (4)
+#define PPU_CAP (4)
 
 
 // multisample
