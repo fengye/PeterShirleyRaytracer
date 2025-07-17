@@ -10,6 +10,7 @@
 #include "debug.h"
 #include <memory>
 #include <sys/cond.h>
+#include "tile.h"
 
 static color ray_color(const ray& r, const hittable& world, int depth)
 {
@@ -44,7 +45,7 @@ void ppu_raytrace(void* arg)
 		sysCondWait(ppu_device->cond_var, 0);
 		sysMutexUnlock(ppu_device->mutex);
 
-		// IF SIGNALS QUIT, THEN BREAK THE LOOP
+		// IF SIGNALSF QUIT, THEN BREAK THE LOOP
 		if (ppu_device->sync == SYNC_QUIT)
 		{
 			debug_printf("%s received QUIT signal\n", threadname);
@@ -81,32 +82,41 @@ void ppu_raytrace(void* arg)
 //			debug_printf("%s start_y %d end_y %d start_x %d end_x %d\n", threadname, world_data->start_y, world_data->end_y, world_data->start_x, world_data->end_x);
 //			debug_printf("%s samples_per_pixel %d max_depth %d\n", threadname, samples_per_pixel, max_depth);
 
-			for(int j = world_data->start_y; j < world_data->end_y; ++j)
+			// loop all tile_id, workout tile's bounding box, keep the algorithm same, then map back to pixel_data[]
+			for(int tile_id = world_data->start_tile_id; tile_id <= world_data->end_tile_id; ++tile_id)
 			{
-				for(int i = world_data->start_x; i < world_data->end_x; ++i)
+				int start_x, start_y, end_x, end_y;
+				calc_tile_bounding_box(tile_id, &start_x, &start_y, &end_x, &end_y);
+
+
+				for(int j = start_y; j < end_y; ++j)
 				{
-					color pixel_color(0, 0, 0);
-
-					int width = (world_data->end_x - world_data->start_x);
-					int x = i - world_data->start_x;
-					int y = j - world_data->start_y;
-
-					for (int s = 0; s < samples_per_pixel; ++s) 
+					for(int i = start_x; i < end_x; ++i)
 					{
-						FLOAT_TYPE u = ((FLOAT_TYPE)i + random_double()) / (world_data->img_width - 1);
-						FLOAT_TYPE v = ((FLOAT_TYPE)j + random_double()) / (world_data->img_height - 1);
+						color pixel_color(0, 0, 0);
 
-						pixel_color += ray_color(cam.get_ray(u, v), world, max_depth);
-		            }
+						//int width = (world_data->end_x - world_data->start_x);
+						//int x = i - world_data->start_x;
+						//int y = j - world_data->start_y;
 
-		            // average by samples
-		            pixel_color /= samples_per_pixel;
+						for (int s = 0; s < samples_per_pixel; ++s) 
+						{
+							FLOAT_TYPE u = ((FLOAT_TYPE)i + random_double()) / (world_data->img_width - 1);
+							FLOAT_TYPE v = ((FLOAT_TYPE)j + random_double()) / (world_data->img_height - 1);
 
-		            //debug_printf("%s Pixel (%d, %d)=(%.2f, %.2f, %.2f)\n", threadname, i, j, pixel_color.x(), pixel_color.y(), pixel_color.z());
+							pixel_color += ray_color(cam.get_ray(u, v), world, max_depth);
+			            }
 
-					pixel_data_t* pixel = &pixel_data[y * width  + x];
-					pixel_color.to_pixel_data(pixel);
-					//debug_printf("%s Pixel output (%d, %d)=(%02x, %02x, %02x)\n", threadname, i, j, pixel->rgba[0], pixel->rgba[1], pixel->rgba[2]);
+			            // average by samples
+			            pixel_color /= samples_per_pixel;
+
+			            //debug_printf("%s Pixel (%d, %d)=(%.2f, %.2f, %.2f)\n", threadname, i, j, pixel_color.x(), pixel_color.y(), pixel_color.z());
+
+						//pixel_data_t* pixel = &pixel_data[y * width  + x];
+						pixel_data_t* pixel_ptr = get_local_pixel_pointer_from_tile_offset(pixel_data, tile_id - world_data->start_tile_id, i, j);
+						pixel_color.to_pixel_data(pixel_ptr);
+						//debug_printf("%s Pixel output (%d, %d)=(%02x, %02x, %02x)\n", threadname, i, j, pixel->rgba[0], pixel->rgba[1], pixel->rgba[2]);
+					}
 				}
 			}
 

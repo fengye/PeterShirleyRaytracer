@@ -41,8 +41,8 @@
 
 #define WAIT_INPUT_WHEN_FINISH 1
 #define STOP_SPU_BY_TERMINATION 0
-#define SINGLE_NODE_MODE 0
-#define SLAVE_ON_MASTER 1
+#define SINGLE_NODE_MODE 0 // 0 for networked-node parallel mode, 1 for local parallel mode
+#define SLAVE_ON_MASTER 1  // doing work even I'm the master
 
 SYS_PROCESS_PARAM(1001, 0x100000);
 

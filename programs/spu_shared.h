@@ -32,21 +32,26 @@ typedef struct _spu_shared
 
 typedef struct _world_data
 {
+	// 16 byte block
 	int32_t 			img_width; // 4
 	int32_t 			img_height; // 4
 	uint32_t            obj_data_ea; // 4
 	uint32_t            obj_data_sz; // 4
-	int32_t  			start_x; // 4
-	int32_t  			start_y; // 4
-	int32_t 			end_x; // 4
-	int32_t 			end_y; // 4
+
+	// 16 byte block
+	int32_t 			start_tile_id;	// 4
+	int32_t  			end_tile_id;	// 4
 	float  				viewport_width;	// 4
 	float  				viewport_height; // 4
+
+	// 16 byte block
 	float  				focal_length; // 4
 	float  				aspect_ratio; // 4
 	int32_t  			samples_per_pixel; // 4
 	int32_t  			max_bounce_depth; // 4
-	uint32_t            padding[2]; // 8
+
+	// 16 byte block padding
+	uint32_t            padding[4]; // 16
 } world_data_t;
 
 typedef struct _named_pixel_data

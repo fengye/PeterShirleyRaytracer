@@ -3,6 +3,7 @@
 #include "config.h"
 #include "sphere.h"
 #include "vec3.h"
+#include "tile.h"
 #include "debug.h"
 
 #include <sys/mutex.h>
@@ -14,7 +15,9 @@
 
 static std::map<uint32_t, node_job_t> s_job_record;
 static uint32_t s_job_counter = 0;
-static int32_t s_leftover_scanlines;
+//static int32_t s_leftover_scanlines;
+static int32_t s_leftover_tiles;
+static int32_t s_tile_count_per_frame;
 static int32_t s_curr_frame = -1;
 static int32_t s_target_frame = 0;
 static int s_img_width, s_img_height;
@@ -26,7 +29,10 @@ void init_node_jobs(int img_width, int img_height)
 	s_img_width = img_width;
 	s_img_height = img_height;
 
-	s_leftover_scanlines = img_height;
+	s_tile_count_per_frame = get_total_tiles_count();
+	s_leftover_tiles = s_tile_count_per_frame;
+
+//	s_leftover_scanlines = img_height;
 	s_curr_frame = -1;
 	s_target_frame = 0;
 
@@ -40,18 +46,24 @@ void shutdown_node_jobs()
 	sysMutexDestroy(s_job_mutex);
 }
 
-bool allocate_node_job(uint8_t ppu_count, uint8_t spu_count, uint32_t* job_id, uint8_t** serialized_data, size_t* data_size, int* img_width, int* img_height, int* start_y, int* end_y)
+bool allocate_node_job(uint8_t ppu_count, uint8_t spu_count, uint32_t* job_id, uint8_t** serialized_data, size_t* data_size, int* img_width, int* img_height, int* start_tile_id, int* end_tile_id)
 {
 	scoped_mutex lock(s_job_mutex);
 
-	if (s_leftover_scanlines <= 0)
+	if (s_leftover_tiles <= 0)
 		return false;
 
 	uint32_t id = ++s_job_counter;
 	int32_t capable_take = ppu_count * PPU_CAP + spu_count * SPU_CAP;
+	/*
 	if (s_leftover_scanlines < capable_take)
 	{
 		capable_take = s_leftover_scanlines;
+	}
+	*/
+	if (capable_take > s_leftover_tiles)
+	{
+		capable_take = s_leftover_tiles;
 	}
 
 	std::vector<std::shared_ptr<sphere>> sphere_world;
@@ -75,6 +87,11 @@ bool allocate_node_job(uint8_t ppu_count, uint8_t spu_count, uint32_t* job_id, u
 	assert(actual_blob_size <= blob_size);
 	debug_printf("Sphere blob addr: %lu size: %d actual_size: %d count: %d\n", (uint64_t)obj_blob, blob_size, actual_blob_size, actual_blob_size / element_size);
 
+	// calculate current job's bounding box in pixel
+//	int32_t start_x, start_y, end_x, end_y;
+//	calc_next_job_bounding_box(&start_x, &start_y, &end_x, &end_y);
+
+	/*
 	node_job_t node_job {
 		id,
 		s_img_width,
@@ -86,6 +103,19 @@ bool allocate_node_job(uint8_t ppu_count, uint8_t spu_count, uint32_t* job_id, u
 	};
 
 	s_leftover_scanlines -= capable_take;
+	*/
+
+	int32_t allocated_tiles = s_tile_count_per_frame - s_leftover_tiles;
+
+	node_job_t node_job {
+		id,
+		s_img_width,
+		s_img_height,
+		allocated_tiles,
+		allocated_tiles + capable_take - 1 // end_tile_id is inclusive
+	};
+
+	s_leftover_tiles -= capable_take;
 	s_job_record[id] = node_job;
 
 	// output
@@ -94,8 +124,8 @@ bool allocate_node_job(uint8_t ppu_count, uint8_t spu_count, uint32_t* job_id, u
 	*data_size = actual_blob_size;
 	*img_width = node_job.img_width;
 	*img_height = node_job.img_height;
-	*start_y = node_job.start_y;
-	*end_y = node_job.end_y;
+	*start_tile_id = allocated_tiles;
+	*end_tile_id = allocated_tiles + capable_take - 1;
 
 	return true;
 }
@@ -103,7 +133,8 @@ bool allocate_node_job(uint8_t ppu_count, uint8_t spu_count, uint32_t* job_id, u
 bool require_more_node_jobs()
 {
 	scoped_mutex lock(s_job_mutex);
-	bool required = s_leftover_scanlines > 0;
+	//bool required = s_leftover_scanlines > 0;
+	bool required = s_leftover_tiles > 0;
 
 	return required;
 }
@@ -156,6 +187,7 @@ bool is_rendering_curr_frame()
 void advance_next_frame()
 {
 	scoped_mutex lock(s_job_mutex);
-	s_leftover_scanlines = s_img_height;
+//	s_leftover_scanlines = s_img_height;
+	s_leftover_tiles = s_tile_count_per_frame;
 	s_target_frame++;
 }

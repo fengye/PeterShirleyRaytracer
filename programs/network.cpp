@@ -13,6 +13,7 @@
 #include "config.h"
 #include "network.h"
 #include "node_job.h"
+#include "tile.h"
 
 static int main_socket_fd = -1;
 static int listen_socket_fd = -1;
@@ -99,41 +100,52 @@ static void node_serv_func(void* args)
             continue;
         }
 
-        debug_printf("Offered: (%d, %d)\n", ppu_count, spu_count);
+        debug_printf("Offered: (PPU=%d, SPU=%d)\n", ppu_count, spu_count);
 
         // allocate job id
         uint32_t job_id;
         uint8_t* serialized_data;
         size_t serialized_data_size;
         int img_width, img_height;
-        int start_y, end_y;
-        int32_t job_count;
+        //int start_y, end_y;
+        int start_tile_id, end_tile_id;
+        int tile_count; // not to be confused with jobs. we keep track of tiles
         debug_printf("Allocating job for %d...\n", param->socket_fd);
-        if (!allocate_node_job(ppu_count, spu_count, &job_id, &serialized_data, &serialized_data_size, &img_width, &img_height, &start_y, &end_y))
+        if (!allocate_node_job(ppu_count, spu_count, &job_id, &serialized_data, &serialized_data_size, &img_width, &img_height, &start_tile_id, &end_tile_id))
         {
             debug_printf("No more jobs for current frame!\n");
-            // no more jobs to be done, start over node serv proc
-            job_count = 0;
+            // no more tiless to be done, start over node serv proc
+            tile_count = 0;
         }
         else{
             debug_printf("Allocating job(%d) for %d done\n", job_id, param->socket_fd);
-            job_count = ppu_count + spu_count;
+
+            tile_count = end_tile_id - start_tile_id + 1; // end_tile_id inclusive
         }
 
-        if (!send_job_count(param->socket_fd, job_count))
+        // The reason we haven't integreate tile_count into job_request is slave needs a condition to whether wait for coming request, or 
+        // just ignore and restart the slave loop
+        if (!send_tile_count(param->socket_fd, tile_count))
         {
-            debug_printf("Error sending job count to %d\n", param->socket_fd);
+            debug_printf("Error sending tile count to %d\n", param->socket_fd);
             break;
         }
 
-        if (job_count > 0)
+        if (tile_count > 0)
         {
             // If job is valid, wait for result
-            debug_printf("Job id %d. Scanline Y from %d - %d\n", job_id, start_y, end_y);
+            debug_printf("Job id %d. Tile id from %d - %d\n", job_id, start_tile_id, end_tile_id);
+
+            for(int i = start_tile_id; i <= end_tile_id; ++i)
+            {
+                int sx, sy, ex, ey;
+                calc_tile_bounding_box(i, &sx, &sy, &ex, &ey);
+                debug_printf("Tile id: %d, bounding box: (%d, %d)->(%d, %d)\n", i, sx, sy, ex, ey);
+            }
 
             // send job request
             debug_printf("Sending job(%d) request to %d\n", job_id, param->socket_fd);
-            if (!send_job_request(param->socket_fd, job_id, serialized_data, serialized_data_size, img_width, img_height, start_y, end_y))
+            if (!send_job_request(param->socket_fd, job_id, serialized_data, serialized_data_size, img_width, img_height, start_tile_id, end_tile_id))
             {
                 free(serialized_data);
                 debug_printf("Error sending job to slave %d\n", param->socket_fd);
@@ -151,7 +163,7 @@ static void node_serv_func(void* args)
             node_result_t result;
             uint32_t job_id_returned;
             debug_printf("Receiving job(%d) result from %d...\n", job_id, param->socket_fd);
-            if (recv_job_result(param->socket_fd, &job_id_returned, (uint8_t**)(&result.pixel_data), &result.pixel_data_size) && job_id == job_id_returned)
+            if (recv_job_result(param->socket_fd, &job_id_returned, (uint8_t**)(&result.pixel_data), &result.pixel_data_size, &result.start_tile_id, &result.end_tile_id) && job_id == job_id_returned)
             {
                 debug_printf("Receiving job(%d) result: %p(%lld) from %d done!\n", job_id, result.pixel_data, result.pixel_data_size, param->socket_fd);
                 debug_printf("Notifying update thread.\n");
@@ -434,17 +446,19 @@ typedef struct _job_request_packet_t
     size_t serialized_data_size;
     int img_width;
     int img_height;
-    int start_y;
-    int end_y;
+    int start_tile_id;
+    int end_tile_id;
 } job_request_packet_t;
 
 typedef struct _job_result_packet_t
 {
     uint32_t job_id;
     size_t serialized_data_size;
+    int start_tile_id;
+    int end_tile_id;
 } job_result_packet_t;
 
-bool send_job_count(int conn_fd, int32_t count)
+bool send_tile_count(int conn_fd, int32_t count)
 {
     uint8_t code = NC_JOBCOUNT;
     if (send_request_header(conn_fd, code))
@@ -459,7 +473,7 @@ bool send_job_count(int conn_fd, int32_t count)
     return false;
 }
 
-bool recv_job_count(int conn_fd, int32_t* out_count)
+bool recv_tile_count(int conn_fd, int32_t* out_count)
 {
     uint8_t code = NC_JOBCOUNT;
     if (recv_request_header(conn_fd, &code) && code == NC_JOBCOUNT)
@@ -475,7 +489,7 @@ bool recv_job_count(int conn_fd, int32_t* out_count)
     return false;
 }
 
-bool send_job_request(int conn_fd, uint32_t job_id, uint8_t* serialized_data, size_t data_size, int img_width, int img_height, int start_y, int end_y)
+bool send_job_request(int conn_fd, uint32_t job_id, uint8_t* serialized_data, size_t data_size, int img_width, int img_height, int start_tile_id, int end_tile_id)
 {
     uint8_t code = NC_JOBREQUEST;
     if (send_request_header(conn_fd, code))
@@ -485,8 +499,8 @@ bool send_job_request(int conn_fd, uint32_t job_id, uint8_t* serialized_data, si
             data_size,
             img_width,
             img_height,
-            start_y,
-            end_y
+            start_tile_id,
+            end_tile_id
         };
 
         if (send(conn_fd, &job_request, sizeof(job_request_packet_t), 0) == sizeof(job_request_packet_t))
@@ -500,7 +514,7 @@ bool send_job_request(int conn_fd, uint32_t job_id, uint8_t* serialized_data, si
     return false;
 }
 
-bool recv_job_request(int conn_fd, uint32_t* out_job_id, uint8_t** out_serialized_data, size_t* out_data_size, int* out_img_width, int* out_img_height, int* out_start_y, int* out_end_y)
+bool recv_job_request(int conn_fd, uint32_t* out_job_id, uint8_t** out_serialized_data, size_t* out_data_size, int* out_img_width, int* out_img_height, int* out_start_tile_id, int* out_end_tile_id)
 {
     uint8_t code = NC_NOP;
     if (recv_request_header(conn_fd, &code) && code == NC_JOBREQUEST)
@@ -519,8 +533,8 @@ bool recv_job_request(int conn_fd, uint32_t* out_job_id, uint8_t** out_serialize
                 *out_data_size = job_request.serialized_data_size;
                 *out_img_width = job_request.img_width;
                 *out_img_height = job_request.img_height;
-                *out_start_y = job_request.start_y;
-                *out_end_y = job_request.end_y;
+                *out_start_tile_id = job_request.start_tile_id;
+                *out_end_tile_id = job_request.end_tile_id;
 
                 return true;
             }
@@ -572,7 +586,7 @@ static ssize_t recv_reliable(int sockfd, void *buf, size_t len, int flags)
     return len;
 }
 
-bool send_job_result(int conn_fd, uint32_t job_id, uint8_t* pixel_data, size_t pixel_data_size)
+bool send_job_result(int conn_fd, uint32_t job_id, uint8_t* pixel_data, size_t pixel_data_size, int start_tile_id, int end_tile_id)
 {
     uint8_t code = NC_JOBRESULT;
     if (send_request_header(conn_fd, code))
@@ -580,7 +594,9 @@ bool send_job_result(int conn_fd, uint32_t job_id, uint8_t* pixel_data, size_t p
 
         job_result_packet_t job_result {
             job_id,
-            pixel_data_size
+            pixel_data_size,
+            start_tile_id,
+            end_tile_id
         };
 
         if (send(conn_fd, &job_result, sizeof(job_result_packet_t), 0) == sizeof(job_result_packet_t))
@@ -595,7 +611,7 @@ bool send_job_result(int conn_fd, uint32_t job_id, uint8_t* pixel_data, size_t p
     return false;
 }
 
-bool recv_job_result(int conn_fd, uint32_t* out_job_id, uint8_t** out_pixel_data, size_t* out_pixel_data_size)
+bool recv_job_result(int conn_fd, uint32_t* out_job_id, uint8_t** out_pixel_data, size_t* out_pixel_data_size, int* out_start_tile_id, int* out_end_tile_id)
 {
     uint8_t code = NC_NOP;
     if (recv_request_header(conn_fd, &code) && code == NC_JOBRESULT)
@@ -611,6 +627,8 @@ bool recv_job_result(int conn_fd, uint32_t* out_job_id, uint8_t** out_pixel_data
 
                 *out_job_id = job_result.job_id;
                 *out_pixel_data_size = job_result.serialized_data_size;
+                *out_start_tile_id = job_result.start_tile_id;
+                *out_end_tile_id = job_result.end_tile_id;
                 return true;
             }
         }

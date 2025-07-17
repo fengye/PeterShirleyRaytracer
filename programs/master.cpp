@@ -19,6 +19,7 @@
 #include "spu_shared.h"
 #include "color.h"
 #include "camera.h"
+#include "tile.h"
 
 #define WAIT_INPUT_WHEN_FINISH 1
 
@@ -76,7 +77,31 @@ static void master_work(Bitmap* bitmap)
 		        	if (get_node_job(job_id, &node_job))
 		        	{
 		        		debug_printf("Processing result of job %d\n", job_id);
-		        		// update bitmap
+
+		        		// work out global pixel coordinate of node_result.start_tile_id till end_tile_id
+		        		// then update bitmap with correct mapping
+
+		        		// for each tile
+		        		for(int i = node_result.start_tile_id; i <= node_result.end_tile_id; ++i)
+		        		{
+		        			int tile_left_pos, tile_top_pos;
+		        			get_tile_coord(i, &tile_left_pos, &tile_top_pos);
+
+		        			for(int x = 0; x < TILE_WIDTH; ++x)
+		        			{
+		        				for(int y = 0; y < TILE_HEIGHT; ++y)
+		        				{
+		        					pixel_data_t pixel;
+		        					// read pixel from node result
+		        					get_local_pixel_from_tile_offset(node_result.pixel_data, i - node_result.start_tile_id, x, y, &pixel);
+		        					// write pixel back to global bitmap
+		        					write_pixel_bitmap(bitmap, tile_left_pos + x, tile_top_pos + y, &pixel);
+		        				}
+		        			}
+		        			
+		        		}
+
+		        		/*
 		        		auto img_width = node_job.img_width;
 		        		auto img_height = node_job.img_height;
 		        		for(int j = node_job.start_y; j < node_job.end_y; ++j)
@@ -88,6 +113,7 @@ static void master_work(Bitmap* bitmap)
 								write_pixel_bitmap(bitmap, i, (img_height - (j+1)), pixel);
 							}
 						}
+						*/
 
 
 		        		// dismiss the job
@@ -147,6 +173,8 @@ void master_main()
 
 	g_running = 1;
 
+	// init tiles before init_node_jobs as it depends on how tiles being constructed
+	init_tiles(img_width, img_height);
 	// init node jobs before the server runs!
 	init_node_jobs(img_width, img_height);
 

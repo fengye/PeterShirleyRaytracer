@@ -14,6 +14,7 @@
 #include "color_pixel_util.h"
 #include "sphere.h"
 #include "camera.h"
+#include "tile.h"
 
 #define nullptr NULL
 
@@ -129,6 +130,9 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 			mfc_get(&world_data, world_data_ea, sizeof(world_data_t), TAG, 0, 0);
 			wait_for_completion();
 
+			// init tile information
+			init_tiles(world_data.img_width, world_data.img_height);
+
 			// get world actual obj data
 			uint8_t* obj_blob = memalign(SPU_ALIGN, world_data.obj_data_sz);
 			mfc_get(obj_blob, world_data.obj_data_ea, world_data.obj_data_sz, TAG, 0, 0);
@@ -161,36 +165,46 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 
 			camera_t cam = camera_create(world_data.aspect_ratio, world_data.focal_length);
 
-			for(int j = world_data.start_y; j < world_data.end_y; ++j)
+			// loop all tiles, work out tile bounding box, keep the algorithm same, then map pixel back to pixel_data
+			for(int tile_id = world_data.start_tile_id; tile_id <= world_data.end_tile_id; ++tile_id)
 			{
-				for(int i = world_data.start_x; i < world_data.end_x; ++i)
+				int start_x, start_y, end_x, end_y;
+				calc_tile_bounding_box(tile_id, &start_x, &start_y, &end_x, &end_y);
+
+				for(int j = start_y; j < end_y; ++j)
 				{
-					int width = (world_data.end_x - world_data.start_x);
-					int x = i - world_data.start_x;
-					int y = j - world_data.start_y;
+					for(int i = start_x; i < end_x; ++i)
+					{
+						/*
+						int width = (world_data.end_x - world_data.start_x);
+						int x = i - world_data.start_x;
+						int y = j - world_data.start_y;
+						*/
 
-					color_t color = vec3_create(0, 0, 0);
-					for (int s = 0; s < samples_per_pixel; ++s) {
+						color_t color = vec3_create(0, 0, 0);
+						for (int s = 0; s < samples_per_pixel; ++s) {
 
-						FLOAT_TYPE u = ((FLOAT_TYPE)i + random_double()) / (world_data.img_width - 1);
-						FLOAT_TYPE v = ((FLOAT_TYPE)j + random_double()) / (world_data.img_height - 1);
+							FLOAT_TYPE u = ((FLOAT_TYPE)i + random_double()) / (world_data.img_width - 1);
+							FLOAT_TYPE v = ((FLOAT_TYPE)j + random_double()) / (world_data.img_height - 1);
 
-		                ray_t r = camera_get_ray(&cam, u, v);
-		                color_t color_contrib = ray_color(spheres, sphere_count, &r, max_depth);
-		                vec3_add(&color, &color_contrib);
-		            }
+			                ray_t r = camera_get_ray(&cam, u, v);
+			                color_t color_contrib = ray_color(spheres, sphere_count, &r, max_depth);
+			                vec3_add(&color, &color_contrib);
+			            }
 
-		            // average by samples
-		            vec3_div(&color, (FLOAT_TYPE)samples_per_pixel);
-		            // approximate gamma correction
-#if 0
-		            color.e[0] = sqrtf(color.e[0]);
-		            color.e[1] = sqrtf(color.e[1]);
-		            color.e[2] = sqrtf(color.e[2]);
-#endif
+			            // average by samples
+			            vec3_div(&color, (FLOAT_TYPE)samples_per_pixel);
+			            // approximate gamma correction
+	#if 0
+			            color.e[0] = sqrtf(color.e[0]);
+			            color.e[1] = sqrtf(color.e[1]);
+			            color.e[2] = sqrtf(color.e[2]);
+	#endif
 
-					pixel_data_t* pixel = &pixels_data[y * width  + x];
-					color_to_pixel_data(&color, pixel);
+						//pixel_data_t* pixel = &pixels_data[y * width  + x];
+						pixel_data_t* pixel_ptr = get_local_pixel_pointer_from_tile_offset(pixels_data, tile_id - world_data.start_tile_id, i, j);
+						color_to_pixel_data(&color, pixel_ptr);
+					}
 				}
 			}
 

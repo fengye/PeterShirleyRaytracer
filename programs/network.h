@@ -26,7 +26,9 @@ enum NETWORK_CODE
 typedef struct _node_result_t
 {
     size_t pixel_data_size;
-    pixel_data_t* pixel_data;
+    pixel_data_t* pixel_data; // local pixel data, starting from the tile with start_tile_id, ending at end_tile_id
+    int start_tile_id; // will need start/end tile id to segment pixel_data, as they are all squeezed together in tile id order
+    int end_tile_id;
 } node_result_t;
 
 typedef struct _node_sync_t
@@ -48,10 +50,10 @@ extern void kickoff_all_nodes();
 /* caller to free serialized_data */
 extern bool send_shutdown_request(int conn_fd, bool shutdown);
 extern bool recv_processor_offer(int conn_fd, uint8_t* out_ppu_count, uint8_t* out_spu_count);
-extern bool send_job_count(int conn_fd, int32_t count);
-extern bool send_job_request(int conn_fd, uint32_t job_id, uint8_t* serialized_data, size_t data_size, int img_width, int img_height, int start_y, int end_y);
+extern bool send_tile_count(int conn_fd, int32_t count);
+extern bool send_job_request(int conn_fd, uint32_t job_id, uint8_t* serialized_data, size_t data_size, int img_width, int img_height, int start_tile_id, int end_tile_id);
 /* caller to free out_pixel_data */
-extern bool recv_job_result(int conn_fd, uint32_t* out_job_id, uint8_t** out_pixel_data, size_t* out_pixel_data_size);
+extern bool recv_job_result(int conn_fd, uint32_t* out_job_id, uint8_t** out_pixel_data, size_t* out_pixel_data_size, int* out_start_tile_id, int* out_end_tile_id);
 // ~Master
 
 // Slave
@@ -60,10 +62,10 @@ extern bool disconnect_master();
 
 extern bool recv_shutdown_request(int conn_fd, bool* is_shutdown);
 extern bool send_processor_offer(int conn_fd, uint8_t ppu_count, uint8_t spu_count);
-extern bool recv_job_count(int conn_fd, int32_t* out_count);
+extern bool recv_tile_count(int conn_fd, int32_t* out_count);
 /* caller to free out_serialized_data */
-extern bool recv_job_request(int conn_fd, uint32_t* out_job_id, uint8_t** out_serialized_data, size_t* out_data_size, int* out_img_width, int* out_img_height, int* out_start_y, int* out_end_y);
-extern bool send_job_result(int conn_fd, uint32_t job_id, uint8_t* pixel_data, size_t pixel_data_size);
+extern bool recv_job_request(int conn_fd, uint32_t* out_job_id, uint8_t** out_serialized_data, size_t* out_data_size, int* out_img_width, int* out_img_height, int* out_start_tile_id, int* out_end_tile_id);
+extern bool send_job_result(int conn_fd, uint32_t job_id, uint8_t* pixel_data, size_t pixel_data_size, int start_tile_id, int end_tile_id);
 // ~Slave
 
 // Common
