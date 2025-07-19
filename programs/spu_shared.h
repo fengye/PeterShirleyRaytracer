@@ -39,8 +39,8 @@ typedef struct _world_data
 	uint32_t            obj_data_sz; // 4
 
 	// 16 byte block
-	int32_t 			start_tile_id;	// 4
-	int32_t  			end_tile_id;	// 4
+	int32_t 			global_start_tile_id;	// 4
+	int32_t  			global_end_tile_id;	// 4
 	float  				viewport_width;	// 4
 	float  				viewport_height; // 4
 

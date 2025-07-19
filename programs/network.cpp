@@ -116,6 +116,14 @@ static void node_serv_func(void* args)
             debug_printf("No more jobs for current frame!\n");
             // no more tiless to be done, start over node serv proc
             tile_count = 0;
+
+            // FIXME: maybe we need a signal?
+            sysMutexLock(g_node_sync.mutex, 0);
+            // FIXME: this condition signal probably isn't buffered
+            sysCondSignal(g_node_sync.cond_var);
+            debug_printf("Signaled because NO JOBS NEEDED\n");
+            sysMutexUnlock(g_node_sync.mutex);
+
         }
         else{
             debug_printf("Allocating job(%d) for %d done\n", job_id, param->socket_fd);
@@ -136,12 +144,14 @@ static void node_serv_func(void* args)
             // If job is valid, wait for result
             debug_printf("Job id %d. Tile id from %d - %d\n", job_id, start_tile_id, end_tile_id);
 
+            /*
             for(int i = start_tile_id; i <= end_tile_id; ++i)
             {
                 int sx, sy, ex, ey;
                 calc_tile_bounding_box(i, &sx, &sy, &ex, &ey);
                 debug_printf("Tile id: %d, bounding box: (%d, %d)->(%d, %d)\n", i, sx, sy, ex, ey);
             }
+            */
 
             // send job request
             debug_printf("Sending job(%d) request to %d\n", job_id, param->socket_fd);
@@ -153,7 +163,7 @@ static void node_serv_func(void* args)
             }
             else
             {
-                debug_printf("Sending job(%d) request to %d done\n", job_id, param->socket_fd);
+//                debug_printf("Sent job(%d) request to %d\n", job_id, param->socket_fd);
                 free(serialized_data);    
             }
 
@@ -165,14 +175,18 @@ static void node_serv_func(void* args)
             debug_printf("Receiving job(%d) result from %d...\n", job_id, param->socket_fd);
             if (recv_job_result(param->socket_fd, &job_id_returned, (uint8_t**)(&result.pixel_data), &result.pixel_data_size, &result.start_tile_id, &result.end_tile_id) && job_id == job_id_returned)
             {
-                debug_printf("Receiving job(%d) result: %p(%lld) from %d done!\n", job_id, result.pixel_data, result.pixel_data_size, param->socket_fd);
+//                debug_printf("Receiving job(%d) result: %p(%lld) from %d done!\n", job_id, result.pixel_data, result.pixel_data_size, param->socket_fd);
                 debug_printf("Notifying update thread.\n");
 
                 // signal conditional variable
                 sysMutexLock(g_node_sync.mutex, 0);
                 g_node_results.insert(std::make_pair(job_id, result));
                 // put the data into storage before signaling
+
+                // FIXME: this condition signal probably isn't buffered
                 sysCondSignal(g_node_sync.cond_var);
+
+                debug_printf("Signaled on job(%d)\n", job_id);
                 sysMutexUnlock(g_node_sync.mutex);
             }
             else
@@ -259,6 +273,7 @@ static void listening_serv_func(void* args)
     }
 
     // Join all the slave node connection threads
+#if DEBUG_IGNORE_SLAVE_JOIN
     debug_printf("Joining all slave node connection threads.\n");
     for(auto* node : s_slave_nodes)
     {
@@ -270,6 +285,7 @@ static void listening_serv_func(void* args)
         // remember to delete allocated node params
         free(node);
     }
+#endif
     s_slave_nodes.clear();
     debug_printf("Joining slave node connection threads done.\n");
 

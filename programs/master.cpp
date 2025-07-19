@@ -66,6 +66,12 @@ static void master_work(Bitmap* bitmap)
 
 		        debug_printf("Condition signaled\n");
 
+		        for(auto& pair: g_node_results)
+		        {
+		        	uint32_t job_id = pair.first;	
+		        	debug_printf("Existing result: job(%d)\n", job_id);
+		        }
+
 		        // get a done node result from the node container
 		        for(auto& pair: g_node_results)
 		        {
@@ -76,7 +82,7 @@ static void master_work(Bitmap* bitmap)
 		        	node_job_t node_job;
 		        	if (get_node_job(job_id, &node_job))
 		        	{
-		        		debug_printf("Processing result of job %d\n", job_id);
+		        		//debug_printf("Processing result of job %d\n", job_id);
 
 		        		// work out global pixel coordinate of node_result.start_tile_id till end_tile_id
 		        		// then update bitmap with correct mapping
@@ -87,15 +93,28 @@ static void master_work(Bitmap* bitmap)
 		        			int tile_left_pos, tile_top_pos;
 		        			get_tile_coord(i, &tile_left_pos, &tile_top_pos);
 
-		        			for(int x = 0; x < TILE_WIDTH; ++x)
-		        			{
-		        				for(int y = 0; y < TILE_HEIGHT; ++y)
+		        			//debug_printf("Tile %d coord: (%d, %d)\n", i, tile_left_pos, tile_top_pos);
+
+	        				for(int y = 0; y < TILE_HEIGHT; ++y)
+	        				{
+	        					for(int x = 0; x < TILE_WIDTH; ++x)
 		        				{
 		        					pixel_data_t pixel;
 		        					// read pixel from node result
+		        					//debug_printf("Get local pixel (%d, %d) from tile %d(offset %d)\n", x, y, i,  i - node_result.start_tile_id);
 		        					get_local_pixel_from_tile_offset(node_result.pixel_data, i - node_result.start_tile_id, x, y, &pixel);
 		        					// write pixel back to global bitmap
-		        					write_pixel_bitmap(bitmap, tile_left_pos + x, tile_top_pos + y, &pixel);
+		        					int global_x = tile_left_pos + x;
+		        					int global_y = tile_top_pos + y;
+		        					if (global_x >= node_job.img_width ||
+		        						global_y >= node_job.img_height)
+		        					{
+		        						// those pixels aren't valid
+		        						//debug_printf("Out of bounds: (%d, %d) ignored.\n", global_x, global_y);
+		        						continue;
+		        					}
+		        					//debug_printf("Write global pixel (%d, %d)\n", global_x, global_y);
+		        					write_pixel_bitmap(bitmap, global_x, global_y, &pixel);
 		        				}
 		        			}
 		        			
@@ -119,7 +138,7 @@ static void master_work(Bitmap* bitmap)
 		        		// dismiss the job
 		        		dismiss_node_job(job_id);
 
-		        		debug_printf("Dismissed result of job %d\n", job_id);
+		        		//debug_printf("Dismissed result of job %d\n", job_id);
 		        	}
 		        	else
 		        	{
@@ -136,7 +155,7 @@ static void master_work(Bitmap* bitmap)
 			}
 			else
 			{
-				debug_printf(".");
+				debug_printf_noprefix(".");
 			}
 
 			sysMutexUnlock(g_node_sync.mutex);

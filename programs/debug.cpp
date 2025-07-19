@@ -31,6 +31,20 @@ void debug_printf(const char* fmt, ...)
   netSendTo(SocketFD, buffer2, strlen(buffer2), 0, (struct sockaddr *)&stSockAddr, sizeof(stSockAddr));
 #endif
 }
+
+void debug_printf_noprefix(const char* fmt, ...)
+{
+#ifdef _PPU_
+  char buffer[0x800];
+  va_list arg;
+  va_start(arg, fmt);
+  vsnprintf(buffer, sizeof(buffer), fmt, arg);
+  va_end(arg);
+
+  netSendTo(SocketFD, buffer, strlen(buffer), 0, (struct sockaddr *)&stSockAddr, sizeof(stSockAddr));
+#endif
+}
+
 void debug_init()
 {
   netInitialize();

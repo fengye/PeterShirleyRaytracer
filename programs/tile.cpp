@@ -56,17 +56,17 @@ void get_tile_coord(int tile_id, int* out_left_pos, int* out_top_pos)
 }
 
 // copy the pixel out version
-void get_local_pixel_from_tile_offset(pixel_data_t* local_pixel_data, int tile_id_offset, int x, int y, pixel_data_t* out_pixel)
+void get_local_pixel_from_tile_offset(pixel_data_t* local_pixel_data, int tile_id_offset, int local_x, int local_y, pixel_data_t* out_pixel)
 {
  	pixel_data_t* curr_tile_pixel_data = local_pixel_data + ((TILE_WIDTH * TILE_HEIGHT) * tile_id_offset); // pointer type of pixel_data_t so do not multiply 4
 
- 	*out_pixel = curr_tile_pixel_data[y * TILE_WIDTH + x];
+ 	*out_pixel = curr_tile_pixel_data[local_y * TILE_WIDTH + local_x];
 }
 
 // retrieve the pixel pointer version
-pixel_data_t* get_local_pixel_pointer_from_tile_offset(pixel_data_t* local_pixel_data, int tile_id_offset, int x, int y)
+pixel_data_t* get_local_pixel_pointer_from_tile_offset(pixel_data_t* local_pixel_data, int tile_id_offset, int local_x, int local_y)
 {
  	pixel_data_t* curr_tile_pixel_data = local_pixel_data + ((TILE_WIDTH * TILE_HEIGHT) * tile_id_offset);
 
- 	return curr_tile_pixel_data + (y * TILE_WIDTH + x);
+ 	return curr_tile_pixel_data + (local_y * TILE_WIDTH + local_x);
 }

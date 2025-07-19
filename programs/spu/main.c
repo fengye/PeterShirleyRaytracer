@@ -166,26 +166,23 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 			camera_t cam = camera_create(world_data.aspect_ratio, world_data.focal_length);
 
 			// loop all tiles, work out tile bounding box, keep the algorithm same, then map pixel back to pixel_data
-			for(int tile_id = world_data.start_tile_id; tile_id <= world_data.end_tile_id; ++tile_id)
+			for(int tile_id = world_data.global_start_tile_id; tile_id <= world_data.global_end_tile_id; ++tile_id)
 			{
 				int start_x, start_y, end_x, end_y;
 				calc_tile_bounding_box(tile_id, &start_x, &start_y, &end_x, &end_y);
 
-				for(int j = start_y; j < end_y; ++j)
+				for(int j = start_y; j <= end_y; ++j)
 				{
-					for(int i = start_x; i < end_x; ++i)
+					for(int i = start_x; i <= end_x; ++i)
 					{
-						/*
-						int width = (world_data.end_x - world_data.start_x);
-						int x = i - world_data.start_x;
-						int y = j - world_data.start_y;
-						*/
-
 						color_t color = vec3_create(0, 0, 0);
 						for (int s = 0; s < samples_per_pixel; ++s) {
 
 							FLOAT_TYPE u = ((FLOAT_TYPE)i + random_double()) / (world_data.img_width - 1);
 							FLOAT_TYPE v = ((FLOAT_TYPE)j + random_double()) / (world_data.img_height - 1);
+
+							// Because the screen space Y goes down, but 3D camera space Y goes up
+							v = 1.0f - v;
 
 			                ray_t r = camera_get_ray(&cam, u, v);
 			                color_t color_contrib = ray_color(spheres, sphere_count, &r, max_depth);
@@ -202,7 +199,7 @@ int main(uint64_t arg1, uint64_t arg2, uint64_t arg3, uint64_t arg4) {
 	#endif
 
 						//pixel_data_t* pixel = &pixels_data[y * width  + x];
-						pixel_data_t* pixel_ptr = get_local_pixel_pointer_from_tile_offset(pixels_data, tile_id - world_data.start_tile_id, i, j);
+						pixel_data_t* pixel_ptr = get_local_pixel_pointer_from_tile_offset(pixels_data, tile_id - world_data.global_start_tile_id, i - start_x, j - start_y);
 						color_to_pixel_data(&color, pixel_ptr);
 					}
 				}

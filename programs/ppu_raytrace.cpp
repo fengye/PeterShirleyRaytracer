@@ -40,10 +40,12 @@ void ppu_raytrace(void* arg)
 	while(true)
 	{
 		// WAIT_FOR_SIGNAL
-		//debug_printf("%s waiting for signal\n", threadname);
+		debug_printf("PPU thread %s waiting for signal\n", threadname);
 		sysMutexLock(ppu_device->mutex, 0);
 		sysCondWait(ppu_device->cond_var, 0);
 		sysMutexUnlock(ppu_device->mutex);
+
+//		debug_printf("PPU thread %s got signal!\n", threadname);
 
 		// IF SIGNALSF QUIT, THEN BREAK THE LOOP
 		if (ppu_device->sync == SYNC_QUIT)
@@ -53,8 +55,10 @@ void ppu_raytrace(void* arg)
 		}
 		else
 		{
-			//debug_printf("%s received START signal\n", threadname);
+			
 			ppu_job_t* ppu_job = ppu_device->ppu_job;
+
+
 
 			world_data_t* world_data = ppu_job->get_input();
 			pixel_data_t* pixel_data = ppu_job->get_output();
@@ -83,15 +87,18 @@ void ppu_raytrace(void* arg)
 //			debug_printf("%s samples_per_pixel %d max_depth %d\n", threadname, samples_per_pixel, max_depth);
 
 			// loop all tile_id, workout tile's bounding box, keep the algorithm same, then map back to pixel_data[]
-			for(int tile_id = world_data->start_tile_id; tile_id <= world_data->end_tile_id; ++tile_id)
+			for(int tile_id = world_data->global_start_tile_id; tile_id <= world_data->global_end_tile_id; ++tile_id)
 			{
 				int start_x, start_y, end_x, end_y;
 				calc_tile_bounding_box(tile_id, &start_x, &start_y, &end_x, &end_y);
 
 
-				for(int j = start_y; j < end_y; ++j)
+				//debug_printf("%s Tile %d bounding box (%d, %d) -> (%d, %d)\n", threadname, tile_id, start_x, start_y, end_x, end_y);
+
+				for(int j = start_y; j <= end_y; ++j)
 				{
-					for(int i = start_x; i < end_x; ++i)
+					
+					for(int i = start_x; i <= end_x; ++i)
 					{
 						color pixel_color(0, 0, 0);
 
@@ -104,27 +111,37 @@ void ppu_raytrace(void* arg)
 							FLOAT_TYPE u = ((FLOAT_TYPE)i + random_double()) / (world_data->img_width - 1);
 							FLOAT_TYPE v = ((FLOAT_TYPE)j + random_double()) / (world_data->img_height - 1);
 
+							// Because the screen space Y goes down, but 3D camera space Y goes up
+							v = 1.0f - v;
+
 							pixel_color += ray_color(cam.get_ray(u, v), world, max_depth);
 			            }
 
 			            // average by samples
 			            pixel_color /= samples_per_pixel;
 
-			            //debug_printf("%s Pixel (%d, %d)=(%.2f, %.2f, %.2f)\n", threadname, i, j, pixel_color.x(), pixel_color.y(), pixel_color.z());
+//			            debug_printf("%s Pixel (%d, %d)=(%.2f, %.2f, %.2f)\n", threadname, i, j, pixel_color.x(), pixel_color.y(), pixel_color.z());
 
 						//pixel_data_t* pixel = &pixel_data[y * width  + x];
-						pixel_data_t* pixel_ptr = get_local_pixel_pointer_from_tile_offset(pixel_data, tile_id - world_data->start_tile_id, i, j);
-						pixel_color.to_pixel_data(pixel_ptr);
-						//debug_printf("%s Pixel output (%d, %d)=(%02x, %02x, %02x)\n", threadname, i, j, pixel->rgba[0], pixel->rgba[1], pixel->rgba[2]);
+						pixel_data_t* pixel_ptr = get_local_pixel_pointer_from_tile_offset(pixel_data, tile_id - world_data->global_start_tile_id, i - start_x, j - start_y);
+
+//						debug_printf("%s Pixel data %p for (%d, %d) tile offset=%d tile_id=%d, world_data->global_start_tile_id=%d\n", threadname, pixel_ptr, i, j, tile_id - world_data->global_start_tile_id, tile_id, world_data->global_start_tile_id);
+
+						pixel_data_t* validate_ptr = pixel_color.to_pixel_data(pixel_ptr);
+						(void)validate_ptr;
+//						debug_printf("%s Pixel output (%d, %d)=(%02x, %02x, %02x, %02x)\n", threadname, i, j, validate_ptr->rgba[0], validate_ptr->rgba[1], validate_ptr->rgba[2], validate_ptr->rgba[3]);
 					}
 				}
 			}
 
 			// SEND FINISH SIGNAL
+			debug_printf("%s Sending finish signal\n", threadname);
 			sysMutexLock(ppu_device->mutex, 0);
 			ppu_device->sync = SYNC_FINISHED;
 			sysCondSignal(ppu_device->cond_var);
 			sysMutexUnlock(ppu_device->mutex);
+
+//			debug_printf("%s Finish signal sent\n", threadname);
 		}
 	}
 

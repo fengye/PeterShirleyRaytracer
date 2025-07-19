@@ -33,6 +33,7 @@ typedef struct _node_result_t
 
 typedef struct _node_sync_t
 {
+	// FIXME: change sys_cond_t to sys_sem_t(semaphore, counted condition)
     sys_cond_t cond_var;
     sys_mutex_t mutex;
 } node_sync_t;

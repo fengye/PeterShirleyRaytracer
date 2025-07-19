@@ -24,8 +24,6 @@
 #include "ppu_job.h"
 
 
-#define STOP_SPU_BY_TERMINATION 0
-
 extern "C" bool check_pad_input();
 extern u32 g_running;
 extern bool g_is_slave_on_master;
@@ -85,7 +83,7 @@ static void slave_shutdown_spus()
 		device->signal_quit();
 	}
 
-#if STOP_SPU_BY_TERMINATION
+#if DEBUG_STOP_SPU_BY_TERMINATION
 	debug_printf("\nTerminating SPU thread group %d...", s_spu_group_id);
 	spuRet = sysSpuThreadGroupTerminate(s_spu_group_id, 0);
 	debug_printf("%08x\n", spuRet);
@@ -138,21 +136,23 @@ static void slave_shutdown_ppus()
 	s_ppu_devices.clear();
 }
 
-static void memcpy_tile(uint8_t* global_dst_raw_pixel, pixel_data_t* src_pixels, int start_tile_id, int end_tile_id)
+static void memcpy_tile(uint8_t* local_dst_raw_pixel, pixel_data_t* src_pixels, int local_start_tile_id, int local_end_tile_id)
 {
-	int size_in_bytes = (end_tile_id - start_tile_id + 1) * TILE_WIDTH * TILE_HEIGHT * sizeof(pixel_data_t);
+	int size_in_bytes = (local_end_tile_id - local_start_tile_id + 1) * TILE_WIDTH * TILE_HEIGHT * sizeof(pixel_data_t);
 
-	int offset = start_tile_id * TILE_WIDTH * TILE_HEIGHT * sizeof(pixel_data_t);
-	memcpy(global_dst_raw_pixel + offset, src_pixels, size_in_bytes);
+	int offset = local_start_tile_id * TILE_WIDTH * TILE_HEIGHT * sizeof(pixel_data_t);
+	memcpy(local_dst_raw_pixel + offset, src_pixels, size_in_bytes);
 }
 
-static void slave_work(void* obj_blob, size_t actual_blob_size, int img_width, int img_height, int global_start_tile_id, int global_end_tile_id, uint8_t** out_pixel_data, size_t* out_pixel_data_size)
+static void slave_work(uint32_t job_id, void* obj_blob, size_t actual_blob_size, int img_width, int img_height, int global_start_tile_id, int global_end_tile_id, uint8_t** out_pixel_data, size_t* out_pixel_data_size)
 {
 	if (!g_is_slave_on_master)
 	{
 		// this slave knows nothing about tiles so have to call init
 		init_tiles(img_width, img_height);
 	}
+
+	debug_printf("slave_work, global tile_id %d -> %d\n", global_start_tile_id, global_end_tile_id);
 	
 	//int32_t leftover_scanline = global_end_y - global_start_y;
 	int curr_tile_id;
@@ -161,6 +161,8 @@ static void slave_work(void* obj_blob, size_t actual_blob_size, int img_width, i
 	//size_t pixel_data_size = img_width * leftover_scanline * sizeof(pixel_data_t);
 	size_t pixel_data_size = global_tile_count * TILE_WIDTH * TILE_HEIGHT * sizeof(pixel_data_t);
 	uint8_t *pixel_data = (uint8_t*)malloc(pixel_data_size);
+
+//	debug_printf("Slave has %d tiles, pixel data %p size %d\n", global_tile_count, pixel_data, pixel_data_size);
 
 	bool quit_work = false;
 	bool allowCheckInput = !g_is_slave_on_master;
@@ -171,36 +173,34 @@ static void slave_work(void* obj_blob, size_t actual_blob_size, int img_width, i
 		const int32_t min_tiles_per_spu = 1;
 		int32_t tiles_per_spu = SPU_CAP; // make sure we don't exceed SPU's local storage limit
 		tiles_per_spu = std::max(min_tiles_per_spu, tiles_per_spu);
+		
+
+//		debug_printf("Allocating SPU for tile %d - %d\n", curr_tile_id, curr_tile_id + tiles_per_spu - 1);
 
 		bool job_enough = false;
-		//int32_t start_scaneline = global_end_y - leftover_scanline;
 		for(int i = 0; i < SPU_COUNT; ++i)
 		{
-			/*
-			int32_t start_y = start_scaneline;
-			int32_t end_y = start_y + scanlines_per_job;
-			start_scaneline += scanlines_per_job;
-
-			if (end_y > global_end_y)
+			if (curr_tile_id + tiles_per_spu - 1 >= global_end_tile_id)
 			{
-				end_y = global_end_y;
-				start_scaneline = global_end_y;
-				job_enough = true;
-			}
-			*/
-			if (curr_tile_id >= global_end_tile_id)
-			{
-				curr_tile_id = global_end_tile_id;
+				tiles_per_spu = global_end_tile_id - curr_tile_id + 1;
 				job_enough = true;
 			}
 
 			s_all_jobs.push_back(
 				std::make_shared<spu_job_t>(img_width, img_height, curr_tile_id, curr_tile_id + tiles_per_spu - 1, i, obj_blob, actual_blob_size));
 
-			if (job_enough)
-				break;
+//			debug_printf("SPU %d got tile %d - %d\n", i, curr_tile_id, curr_tile_id + tiles_per_spu - 1);
 
 			curr_tile_id += tiles_per_spu;
+
+//			debug_printf("Latest curr_tile_id: %d\n", curr_tile_id);
+
+			if (job_enough)
+			{
+//				debug_printf("No more SPU for this job %d\n", job_id);
+				break;
+			}
+			
 		}
 
 
@@ -210,45 +210,41 @@ static void slave_work(void* obj_blob, size_t actual_blob_size, int img_width, i
 			int32_t tiles_per_ppu = PPU_CAP;
 			tiles_per_ppu = std::max(min_tiles_per_ppu, tiles_per_ppu);
 
-			//scanlines_per_ppu = PPU_CAP;
+//			debug_printf("Allocating PPU for tile %d - %d\n", curr_tile_id, curr_tile_id + tiles_per_ppu - 1);
+
 			for(int i = 0; i < PPU_COUNT; ++i)
 			{
-				/*
-				int32_t start_y = start_scaneline;
-				int32_t end_y = start_y + scanlines_per_job;
-				start_scaneline += scanlines_per_job;
-
-				if (end_y > global_end_y)
+				if (curr_tile_id + tiles_per_ppu - 1 >= global_end_tile_id)
 				{
-					end_y = global_end_y;
-					start_scaneline = global_end_y;
-					job_enough = true;
-				}
-				*/
-				if (curr_tile_id >= global_end_tile_id)
-				{
-					curr_tile_id = global_end_tile_id;
+					tiles_per_ppu = global_end_tile_id - curr_tile_id + 1;
 					job_enough = true;
 				}
 
 				s_all_jobs.push_back(
 					std::make_shared<ppu_job_t>(img_width, img_height, curr_tile_id, curr_tile_id + tiles_per_ppu - 1, i, obj_blob, actual_blob_size));
 
-				if (job_enough)
-					break;
-
+//				debug_printf("PPU %d got tile %d - %d\n", i, curr_tile_id, curr_tile_id + tiles_per_ppu - 1);
 				curr_tile_id += tiles_per_ppu;
+
+//				debug_printf("Latest curr_tile_id: %d\n", curr_tile_id);
+
+				if (job_enough)
+				{
+//					debug_printf("No more PPU for this job %d\n", job_id);
+					break;
+				}
+			
 			}
 		}
 
-		int leftover_tiles = global_end_tile_id - s_all_jobs[s_all_jobs.size() - 1]->get_input()->end_tile_id;
+		int leftover_tiles = global_end_tile_id - s_all_jobs[s_all_jobs.size() - 1]->get_input()->global_end_tile_id;
 
-		//leftover_scanline = global_end_y - s_all_jobs[s_all_jobs.size() - 1]->get_input()->end_y;
-
+		/*
 		for(const auto &job : s_all_jobs)
 		{
 			job->print_job_details();
 		}
+		*/
 
 		/////////////////////////////
 		// SPU/PPU JOB -> SPU/PPU DEVICE
@@ -324,16 +320,11 @@ static void slave_work(void* obj_blob, size_t actual_blob_size, int img_width, i
 							world_data_t* input = s_all_jobs[n]->get_input();
 							pixel_data_t* output_pixels = s_all_jobs[n]->get_output();
 
-							//size_t job_data_size = s_all_jobs[n]->get_output_size();
-
-							//int spu_tile_count = input->end_tile_id - input->start_tile_id + 1;
 							// now copy all tile into correct sub rectangles
 							// pixels will be organized by tiles, layout: (row0 | row1 | row2 ... | row15)
-							memcpy_tile(pixel_data, output_pixels, input->start_tile_id, input->end_tile_id);
-
-
-							//int y_offset = input->start_y - global_start_y;
-							//memcpy(pixel_data + y_offset * img_width * sizeof(pixel_data_t), output_pixels, job_data_size);
+							int local_start_tile_id = input->global_start_tile_id - global_start_tile_id;
+							int local_end_tile_id = input->global_end_tile_id - global_start_tile_id;
+							memcpy_tile(pixel_data, output_pixels, local_start_tile_id, local_end_tile_id);
 						}
 					}
 					else
@@ -349,12 +340,9 @@ static void slave_work(void* obj_blob, size_t actual_blob_size, int img_width, i
 							world_data_t* input = s_all_jobs[n]->get_input();
 							pixel_data_t* output_pixels = s_all_jobs[n]->get_output();
 
-							/*
-							size_t job_data_size = (input->end_x - input->start_x) * (input->end_y - input->start_y) * sizeof(pixel_data_t);
-							int y_offset = input->start_y - global_start_y;
-							memcpy(pixel_data + y_offset * img_width * sizeof(pixel_data_t), output_pixels, job_data_size);
-							*/
-							memcpy_tile(pixel_data, output_pixels, input->start_tile_id, input->end_tile_id);
+							int local_start_tile_id = input->global_start_tile_id - global_start_tile_id;
+							int local_end_tile_id = input->global_end_tile_id - global_start_tile_id;
+							memcpy_tile(pixel_data, output_pixels, local_start_tile_id, local_end_tile_id);
 						}
 					}
 				}
@@ -384,10 +372,10 @@ void slave_main(const char* master_addr)
 	int conn_fd;
 	g_running = 1;
 
-	debug_printf("Connecting to master: %s from %s... ", master_addr, g_self_addr);
+	debug_printf("Connecting to master: %s from %s...\n", master_addr, g_self_addr);
 	if (connect_master(master_addr, &conn_fd))
 	{
-		debug_printf("Done!\n");
+		debug_printf("Connected to master: %s !\n", master_addr);
 
 		sysUtilCheckCallback();
 
@@ -420,14 +408,14 @@ void slave_main(const char* master_addr)
 			}
 
 			// send offer
-			debug_printf("Sending offer (%d, %d) ... to %d\n", ppu_count, spu_count, conn_fd);
+			debug_printf("Sending offer (%d, %d) to %d\n", ppu_count, spu_count, conn_fd);
 			if (!send_processor_offer(conn_fd, ppu_count, spu_count))
 			{
 				debug_printf("Error!\n");
 				break;
 			}
 			else{
-				debug_printf("Sending offer (%d, %d) to %d done.\n", ppu_count, spu_count, conn_fd);
+				debug_printf("Sent offer (%d, %d) to %d\n", ppu_count, spu_count, conn_fd);
 			}
 
 			int32_t tile_count;
@@ -463,13 +451,17 @@ void slave_main(const char* master_addr)
 				uint8_t* pixel_data;
 				size_t pixel_data_size;
 				debug_printf("Doing raytrace work on %s... \n", g_self_addr);
-				slave_work(world_data, world_data_size, img_width, img_height, start_tile_id, end_tile_id, &pixel_data, &pixel_data_size);
+
+				// FIXME: fix slave_work()
+				slave_work(job_id, world_data, world_data_size, img_width, img_height, start_tile_id, end_tile_id, &pixel_data, &pixel_data_size);
+				
+
 				// caller to free the world data
 				free(world_data);
 				debug_printf("Raytrace work on %s done.\n", g_self_addr);
 
 				// send the result back to master
-				debug_printf("Sending job(%d) result %p(%lld) to %d... ", job_id, pixel_data, pixel_data_size, conn_fd);
+				debug_printf("Sending job(%d) result %p(%lld) to %d... \n", job_id, pixel_data, pixel_data_size, conn_fd);
 				if (!send_job_result(conn_fd, job_id, pixel_data, pixel_data_size, start_tile_id, end_tile_id))
 				{
 					debug_printf("Error!\n");
@@ -478,7 +470,7 @@ void slave_main(const char* master_addr)
 				}
 				else
 				{
-					debug_printf("Sending job(%d) result %p(%lld) to %d done!\n", job_id, pixel_data, pixel_data_size, conn_fd);
+					debug_printf("Sent job(%d) result %p(%lld) to %d !\n", job_id, pixel_data, pixel_data_size, conn_fd);
 					free(pixel_data);
 					debug_printf("Freed pixel data\n");
 				}
