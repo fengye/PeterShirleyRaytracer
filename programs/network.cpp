@@ -7,7 +7,7 @@
 #include <net/netdb.h>
 #include <sys/thread.h>
 #include <sys/mutex.h>
-#include <sys/cond.h>
+#include <sys/sem.h>
 
 #include "debug.h"
 #include "config.h"
@@ -116,14 +116,6 @@ static void node_serv_func(void* args)
             debug_printf("No more jobs for current frame!\n");
             // no more tiless to be done, start over node serv proc
             tile_count = 0;
-
-            // FIXME: maybe we need a signal?
-            sysMutexLock(g_node_sync.mutex, 0);
-            // FIXME: this condition signal probably isn't buffered
-            sysCondSignal(g_node_sync.cond_var);
-            debug_printf("Signaled because NO JOBS NEEDED\n");
-            sysMutexUnlock(g_node_sync.mutex);
-
         }
         else{
             debug_printf("Allocating job(%d) for %d done\n", job_id, param->socket_fd);
@@ -182,9 +174,7 @@ static void node_serv_func(void* args)
                 sysMutexLock(g_node_sync.mutex, 0);
                 g_node_results.insert(std::make_pair(job_id, result));
                 // put the data into storage before signaling
-
-                // FIXME: this condition signal probably isn't buffered
-                sysCondSignal(g_node_sync.cond_var);
+                node_sync_signal(&g_node_sync);
 
                 debug_printf("Signaled on job(%d)\n", job_id);
                 sysMutexUnlock(g_node_sync.mutex);
@@ -360,31 +350,31 @@ void node_sync_init(node_sync_t* node_sync)
     sysMutexAttrInitialize(mutex_attr);
     sysMutexCreate(&node_sync->mutex, &mutex_attr);
 
-    // create conditional variable
-    sys_cond_attr cond_attr;
-    sysCondAttrInitialize(cond_attr);
-    sysCondCreate(&node_sync->cond_var, node_sync->mutex, &cond_attr);
+    // create semaphore
+    sys_sem_attr_t sem_attr;
+    sem_attr.attr_protocol = SYS_SEM_ATTR_PROTOCOL;
+    sem_attr.attr_pshared = SYS_SEM_ATTR_PSHARED;
+    sem_attr.key = 0;
+    sem_attr.flags = 0;
+
+    sysSemCreate(&node_sync->semaphore, &sem_attr, 0, 0xffff);
 }
 
 void node_sync_destroy(node_sync_t* node_sync)
 {
-    sysCondDestroy(node_sync->cond_var);
+    sysSemDestroy(node_sync->semaphore);
     sysMutexDestroy(node_sync->mutex);
 }
 
 bool node_sync_wait(node_sync_t* node_sync, u64 timeout)
 {
-    sysMutexLock(node_sync->mutex, 0);
-    bool succeeded = sysCondWait(node_sync->cond_var, timeout) == 0;
-    sysMutexUnlock(node_sync->mutex);
+    bool succeeded = sysSemWait(node_sync->semaphore, timeout) == 0;
     return succeeded;
 }
 
 void node_sync_signal(node_sync_t* node_sync)
 {
-    sysMutexLock(node_sync->mutex, 0);
-    sysCondSignal(node_sync->cond_var);
-    sysMutexUnlock(node_sync->mutex);
+    sysSemPost(node_sync->semaphore, 1);
 }
 
 bool send_shutdown_request(int conn_fd, bool shutdown)

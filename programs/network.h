@@ -5,7 +5,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <sys/mutex.h>
-#include <sys/cond.h>
+#include <sys/sem.h>
 
 #include "spu_shared.h"
 
@@ -33,9 +33,8 @@ typedef struct _node_result_t
 
 typedef struct _node_sync_t
 {
-	// FIXME: change sys_cond_t to sys_sem_t(semaphore, counted condition)
-    sys_cond_t cond_var;
-    sys_mutex_t mutex;
+    sys_sem_t semaphore;
+    sys_mutex_t mutex; // for convenience
 } node_sync_t;
 
 extern void node_sync_init(node_sync_t* node_sync);
