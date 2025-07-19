@@ -64,3 +64,20 @@ void bitmapUpdateRGBA(Bitmap* bitmap, u32 x, u32 y, u8 r, u8 g, u8 b, u8 a)
   bitmap->pixels[y * bitmap->width + x] = a << 24 | r << 16 | g << 8 | b;
 }
 
+
+void bitmapUpdateSubregion(Bitmap* bitmap, u32 sx, u32 sy, u32 ex, u32 ey, u8 r, u8 g, u8 b, u8 a)
+{
+  assert(sx >= 0 && sx < bitmap->width);
+  assert(sy >= 0 && sy < bitmap->height);
+  assert(ex >= 0 && ex < bitmap->width);
+  assert(ey >= 0 && ey < bitmap->height);
+
+  for(u32 y = sy; y <= ey; ++y)
+  {
+    for(u32 x=sx; x <= ex; ++x)
+    {
+      bitmap->pixels[y * bitmap->width + x] = a << 24 | r << 16 | g << 8 | b;
+    }
+  }
+  
+}

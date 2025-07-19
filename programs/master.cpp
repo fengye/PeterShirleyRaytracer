@@ -29,16 +29,60 @@ bool g_master_quit = false;
 extern std::map<uint32_t, node_result_t> g_node_results;
 extern node_sync_t g_node_sync;
 
+extern u32 display_width; // for blit interpolation
+extern u32 display_height;
+
 static const u32 CLEAR_COLOR = 0x20FF30;
+
+static void initTileCursorBitmap(Bitmap* tileCursorBitmap)
+{
+	bitmapInit(tileCursorBitmap, TILE_WIDTH, TILE_HEIGHT);
+	bitmapUpdateSubregion(tileCursorBitmap, 0, 0, TILE_WIDTH-1, TILE_HEIGHT-1, 0, 0, 0, 0);
+
+	for(int x = 0; x < 3; ++x)
+	{
+		bitmapUpdateRGBA(tileCursorBitmap, x, 0, 255, 255, 255, 255);
+		bitmapUpdateRGBA(tileCursorBitmap, x, TILE_HEIGHT-1, 255, 255, 255, 255);
+	}
+
+	for(int x = TILE_WIDTH-3; x < TILE_WIDTH; ++x)
+	{
+		bitmapUpdateRGBA(tileCursorBitmap, x, 0, 255, 255, 255, 255);
+		bitmapUpdateRGBA(tileCursorBitmap, x, TILE_HEIGHT-1, 255, 255, 255, 255);
+	}
+
+	for(int y = 0; y < 3; ++y)
+	{
+		bitmapUpdateRGBA(tileCursorBitmap, 0, y, 255, 255, 255, 255);
+		bitmapUpdateRGBA(tileCursorBitmap, TILE_WIDTH-1, y, 255, 255, 255, 255);
+	}
+
+	for(int y = TILE_HEIGHT-3; y < TILE_HEIGHT; ++y)
+	{
+		bitmapUpdateRGBA(tileCursorBitmap, 0, y, 255, 255, 255, 255);
+		bitmapUpdateRGBA(tileCursorBitmap, TILE_WIDTH-1, y, 255, 255, 255, 255);
+	}
+}
+
+static void destroyTileCursorBitmap(Bitmap* tileCursorBitmap)
+{
+	bitmapDestroy(tileCursorBitmap);
+}
 
 static void master_work(Bitmap* bitmap)
 {
 	const u64 WAIT_TIMEOUT = 1000000;
+
+	Bitmap tileCursorBitmap;
+	initTileCursorBitmap(&tileCursorBitmap);
+
 	while(g_running)
 	{
 		struct timeval time_now{};
 	    gettimeofday(&time_now, nullptr);
 	    int32_t start_millisecond = (time_now.tv_sec) * 1000 + (time_now.tv_usec) / 1000;
+
+
 
 		while(is_rendering_curr_frame())
 		{
@@ -82,6 +126,13 @@ static void master_work(Bitmap* bitmap)
 		        	node_job_t node_job;
 		        	if (get_node_job(job_id, &node_job))
 		        	{
+		        		// precalc some of the screen parameters
+			        	const float u_delta = ((float)TILE_WIDTH + 0.5f) / (float)node_job.img_width;
+			        	const float v_delta = ((float)TILE_HEIGHT + 0.5f) / (float)node_job.img_height;
+			        	const u32 tileScreenWidth = (u32)(u_delta * display_width);
+			        	const u32 tileScreenHeight = (u32)(v_delta * display_height);
+
+
 		        		//debug_printf("Processing result of job %d\n", job_id);
 
 		        		// work out global pixel coordinate of node_result.start_tile_id till end_tile_id
@@ -117,23 +168,22 @@ static void master_work(Bitmap* bitmap)
 		        					write_pixel_bitmap(bitmap, global_x, global_y, &pixel);
 		        				}
 		        			}
-		        			
+
+		        			//debug_printf("Update screen for tile %d\n", i);
+					        // update screen
+
+		        			float u = ((float)tile_left_pos + 0.5f) / (float)node_job.img_width;
+		        			float v = ((float)tile_top_pos + 0.5f) / (float)node_job.img_height;
+		        			u32 tileScreenX = (u32)(u * display_width);
+		        			u32 tileScreenY = (u32)(v * display_height);
+
+		        			// blit the whole image
+		        			blit_to(bitmap, 0, 0, display_width, display_height, 0, 0, bitmap->width, bitmap->height);
+		        			// blit cursor 
+		        			blit_to(&tileCursorBitmap, tileScreenX, tileScreenY, tileScreenWidth, tileScreenHeight, 0, 0, TILE_WIDTH, TILE_HEIGHT);
+							flip();
+	        			
 		        		}
-
-		        		/*
-		        		auto img_width = node_job.img_width;
-		        		auto img_height = node_job.img_height;
-		        		for(int j = node_job.start_y; j < node_job.end_y; ++j)
-						{
-							auto diff_y = j - node_job.start_y;
-							for(int i = node_job.start_x; i < node_job.end_x; ++i)
-							{
-								pixel_data_t* pixel = &node_result.pixel_data[ diff_y * img_width + i];
-								write_pixel_bitmap(bitmap, i, (img_height - (j+1)), pixel);
-							}
-						}
-						*/
-
 
 		        		// dismiss the job
 		        		dismiss_node_job(job_id);
@@ -148,10 +198,7 @@ static void master_work(Bitmap* bitmap)
 
 		        g_node_results.clear();
 
-		        debug_printf("Update screen\n");
-		        // update screen
-				blit_to(bitmap, 0, 0, display_width, display_height, 0, 0, bitmap->width, bitmap->height);
-				flip();
+		        
 			}
 			else
 			{
@@ -175,6 +222,8 @@ static void master_work(Bitmap* bitmap)
 
 		advance_next_frame();
 	}
+
+	destroyTileCursorBitmap(&tileCursorBitmap);
 
 	debug_printf("End of master_work()\n");
 }

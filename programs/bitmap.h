@@ -18,4 +18,6 @@ void bitmapSetXpm(Bitmap *bitmap, const char* xpm[]);
 
 void bitmapUpdateRGBA(Bitmap* bitmap, u32 x, u32 y, u8 r, u8 g, u8 b, u8 a);
 
+void bitmapUpdateSubregion(Bitmap* bitmap, u32 sx, u32 sy, u32 ex, u32 ey, u8 r, u8 g, u8 b, u8 a);
+
 #endif // __BITMAP_H__
