@@ -3,6 +3,10 @@
 #include "spu_device.h"
 #include "ppu_device.h"
 #include "slave.h"
+#include "bitmap.h"
+#include "rsxutil.h"
+#include "blit.h"
+#include "color.h"
 
 #include <unistd.h>
 #include <vector>
@@ -367,10 +371,33 @@ static void slave_work(uint32_t job_id, void* obj_blob, size_t actual_blob_size,
 extern char g_self_addr[256];
 
 // This process should directly corresponding to node_serv_func() in network module
-void slave_main(const char* master_addr)
+void slave_main(const char* master_addr, bool draw_works)
 {
 	int conn_fd;
 	g_running = 1;
+
+	// ps3 bitmap
+	Bitmap bitmap;
+
+	if (draw_works)
+	{
+		// gfx init
+		// frame buffer
+		void *host_addr = memalign(CB_SIZE, HOST_SIZE);
+		init_screen(host_addr, HOST_SIZE);
+
+		
+		// clear screen
+		const u32 CLEAR_COLOR = 0x2030FF;
+		rsxClearScreenSetBlendState(CLEAR_COLOR);
+		flip();
+
+		debug_printf("Slave draws works\n");
+	}
+	else
+	{
+		debug_printf("Slave-on-master NOT drawing works\n");
+	}
 
 	debug_printf("Connecting to master: %s from %s...\n", master_addr, g_self_addr);
 	if (connect_master(master_addr, &conn_fd))
@@ -447,14 +474,60 @@ void slave_main(const char* master_addr)
 					debug_printf("Receiving job request from %d done.\n", conn_fd);
 				}
 
+				
 				// do the work
 				uint8_t* pixel_data;
 				size_t pixel_data_size;
 				debug_printf("Doing raytrace work on %s... \n", g_self_addr);
 
-				// FIXME: fix slave_work()
 				slave_work(job_id, world_data, world_data_size, img_width, img_height, start_tile_id, end_tile_id, &pixel_data, &pixel_data_size);
-				
+
+				// draw on slave's screen
+				if (draw_works)
+				{
+					bitmapInit(&bitmap, 400, 225);
+					setRenderTarget(curr_fb);
+
+					debug_printf("Do drawing display_width: %d display_height: %d\n", display_width, display_height);
+					for(int i = start_tile_id; i <= end_tile_id; ++i)
+	        		{
+	        			int tile_left_pos, tile_top_pos;
+	        			get_tile_coord(i, &tile_left_pos, &tile_top_pos);
+
+//	        			debug_printf("Tile %d coord: (%d, %d)\n", i, tile_left_pos, tile_top_pos);
+        				for(int y = 0; y < TILE_HEIGHT; ++y)
+        				{
+        					for(int x = 0; x < TILE_WIDTH; ++x)
+	        				{
+	        					pixel_data_t pixel;
+	        					// read pixel from node result
+	        					get_local_pixel_from_tile_offset((pixel_data_t*)pixel_data, i - start_tile_id, x, y, &pixel);
+	        					// write pixel back to global bitmap
+	        					int global_x = tile_left_pos + x;
+	        					int global_y = tile_top_pos + y;
+	        					if (global_x >= img_width ||
+	        						global_y >= img_height)
+	        					{
+	        						// those pixels aren't valid
+	        						//debug_printf("Out of bounds: (%d, %d) ignored.\n", global_x, global_y);
+	        						continue;
+	        					}
+	        					//debug_printf("Write global pixel (%d, %d)\n", global_x, global_y);
+	        					write_pixel_bitmap(&bitmap, global_x, global_y, &pixel);
+	        				}
+	        			}
+
+	        			// blit the whole image
+		        		blit_to(&bitmap, 0, 0, display_width, display_height, 0, 0, bitmap.width, bitmap.height);
+		        		flip();
+      			
+	        		}
+
+	        		bitmapDestroy(&bitmap);
+	        		
+
+					
+				}
 
 				// caller to free the world data
 				free(world_data);

@@ -104,8 +104,7 @@ static void master_work(Bitmap* bitmap)
 
 			// wait for conditional variable
 			//debug_printf("Waiting for condition\n");
-	        //sysMutexLock(g_node_sync.mutex, 0);
-	        //if (sysCondWait(g_node_sync.cond_var, WAIT_TIMEOUT) == 0)
+	        sysMutexLock(g_node_sync.mutex, 0);
 	        if (node_sync_wait(&g_node_sync, WAIT_TIMEOUT))
 	        {
 
