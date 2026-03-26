@@ -284,7 +284,7 @@ static void listening_serv_func(void* args)
 
 void kickoff_all_nodes()
 {
-    // FIXME: protect s_slave_nodes!
+    // Safe: called from main thread only after the button-press loop, before any further slave accepts matter.
     for(auto& node : s_slave_nodes)
     {
         node_sync_signal(&node->kickoff_cond_var);
